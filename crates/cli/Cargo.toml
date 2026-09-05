@@ -1,0 +1,17 @@
+[package]
+name = "hyperbola-cli"
+description = "Command-line harness: runs the same engine the apps run, without a window."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "hyperbola"
+path = "src/main.rs"
+
+[dependencies]
+hyperbola-core = { path = "../core" }
+hyperbola-runner = { path = "../runner" }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "process", "io-util", "sync", "time"] }

@@ -6,7 +6,7 @@
 //! two machines.
 
 use crate::domain::{CookieSource, DownloadOptions, MediaKind};
-use crate::progress::{POSTPROCESS_TEMPLATE, PROGRESS_TEMPLATE};
+use crate::progress::{FINAL_PATH_TEMPLATE, POSTPROCESS_TEMPLATE, PROGRESS_TEMPLATE};
 use std::path::PathBuf;
 
 /// Paths and tuning the shell supplies — everything about the machine yt-dlp
@@ -73,6 +73,10 @@ pub fn build_download_args(options: &DownloadOptions, env: &RunnerEnv) -> Vec<St
         PROGRESS_TEMPLATE.into(),
         "--progress-template".into(),
         POSTPROCESS_TEMPLATE.into(),
+        // Report where the finished file ended up. --print implies --quiet,
+        // which is why --progress above is explicit.
+        "--print".into(),
+        FINAL_PATH_TEMPLATE.into(),
         "--retries".into(),
         "3".into(),
         "--fragment-retries".into(),
@@ -364,6 +368,15 @@ mod tests {
         assert!(args.contains(&PROGRESS_TEMPLATE.to_string()));
         assert!(args.contains(&POSTPROCESS_TEMPLATE.to_string()));
         assert!(args.contains(&"--newline".to_string()));
+    }
+
+    #[test]
+    fn the_final_path_is_always_printed() {
+        let args = build_download_args(&DownloadOptions::video("u", "/out"), &env());
+        assert!(args.contains(&FINAL_PATH_TEMPLATE.to_string()));
+        // --print implies --quiet, so progress has to be asked for explicitly
+        // or the download would report nothing at all.
+        assert!(args.contains(&"--progress".to_string()));
     }
 
     #[test]

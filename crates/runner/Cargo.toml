@@ -1,0 +1,12 @@
+[package]
+name = "hyperbola-runner"
+description = "Spawns yt-dlp and reports what it does — the desktop half of the engine."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+hyperbola-core = { path = "../core" }
+tokio = { version = "1", features = ["process", "io-util", "macros", "rt", "sync", "time"] }

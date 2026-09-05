@@ -11,7 +11,17 @@ use crate::Error;
 
 /// Parses the single JSON object yt-dlp prints for a URL.
 pub fn parse_probe(source_url: &str, json: &str) -> Result<MediaProbe, Error> {
-    let raw: RawInfo = serde_json::from_str(json).map_err(|e| Error::Probe(e.to_string()))?;
+    // With --ignore-errors yt-dlp prints a bare `null` when it could not read
+    // the URL at all. Reporting that as a deserialisation failure tells the
+    // user nothing they can act on.
+    let trimmed = json.trim();
+    if trimmed.is_empty() || trimmed == "null" {
+        return Err(Error::Probe(
+            "nothing to download at this link — the page has no media, or the site refused it"
+                .to_string(),
+        ));
+    }
+    let raw: RawInfo = serde_json::from_str(trimmed).map_err(|e| Error::Probe(e.to_string()))?;
     Ok(build_probe(source_url, raw))
 }
 
@@ -264,5 +274,17 @@ mod tests {
     fn reports_broken_json_as_a_probe_error() {
         let err = parse_probe("u", "not json").unwrap_err();
         assert!(matches!(err, Error::Probe(_)));
+    }
+
+    #[test]
+    fn a_bare_null_reads_as_nothing_found_not_as_a_parser_failure() {
+        // yt-dlp prints `null` under --ignore-errors when it could not read
+        // the URL. The message must say that, not mention structs.
+        for output in ["null", "null\n", "  ", ""] {
+            let err = parse_probe("https://example.com/x", output).unwrap_err();
+            let message = err.to_string();
+            assert!(message.contains("nothing to download"), "unhelpful message: {message}");
+            assert!(!message.contains("RawInfo"), "leaked parser detail: {message}");
+        }
     }
 }

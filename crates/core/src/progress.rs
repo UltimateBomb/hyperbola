@@ -25,6 +25,14 @@ pub const PROGRESS_TEMPLATE: &str = concat!(
 pub const POSTPROCESS_TEMPLATE: &str =
     "postprocess:@HB@PP|%(progress.status)s|%(progress.postprocessor)s";
 
+/// `--print` template that reports the file's *final* path.
+///
+/// yt-dlp writes into the temporary directory first and moves the finished
+/// file afterwards, so the `Destination:` line it prints during the download
+/// points at a file that no longer exists by the time the download ends.
+/// Only the after-move print knows where the file actually is.
+pub const FINAL_PATH_TEMPLATE: &str = "after_move:@HB@FILE|%(filepath)s";
+
 /// One thing learned from a line of yt-dlp output.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Event {
@@ -48,6 +56,13 @@ pub fn parse_line(line: &str) -> Option<Event> {
     let trimmed = line.trim();
     if trimmed.is_empty() {
         return None;
+    }
+    if let Some(rest) = trimmed.strip_prefix(&format!("{PROGRESS_MARKER}FILE|")) {
+        let path = rest.trim();
+        if path.is_empty() || path == "NA" {
+            return None;
+        }
+        return Some(Event::Destination(PathBuf::from(path)));
     }
     if let Some(rest) = trimmed.strip_prefix(&format!("{PROGRESS_MARKER}PP|")) {
         return parse_postprocess(rest);
@@ -195,6 +210,18 @@ mod tests {
             parse_line("[ExtractAudio] Destination: /home/u/Music/song.mp3").unwrap(),
             Event::Destination(PathBuf::from("/home/u/Music/song.mp3"))
         );
+    }
+
+    #[test]
+    fn the_after_move_print_gives_the_final_path() {
+        // The path the user opens is this one, not the temporary file the
+        // download wrote to.
+        assert_eq!(
+            parse_line("@HB@FILE|/Users/u/Downloads/Big Buck Bunny.mp4").unwrap(),
+            Event::Destination(PathBuf::from("/Users/u/Downloads/Big Buck Bunny.mp4"))
+        );
+        assert_eq!(parse_line("@HB@FILE|NA"), None);
+        assert_eq!(parse_line("@HB@FILE|"), None);
     }
 
     #[test]
