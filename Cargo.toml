@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/core", "src-tauri"]
+members = ["crates/core", "plugins/ytdlp-android", "src-tauri"]
 resolver = "2"
 
 [workspace.package]
