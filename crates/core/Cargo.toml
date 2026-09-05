@@ -1,0 +1,13 @@
+[package]
+name = "hyperbola-core"
+description = "Platform-independent engine: media probing, yt-dlp argument building, progress parsing, download queue, dependency update logic."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true

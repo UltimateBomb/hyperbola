@@ -1,0 +1,15 @@
+/target
+**/target
+node_modules/
+dist/
+.DS_Store
+*.log
+
+# Tauri / Android generated
+src-tauri/gen/
+*.keystore
+key.properties
+local.properties
+
+# Downloaded runtime dependencies (yt-dlp, ffmpeg) — never committed
+/vendor/bin/
