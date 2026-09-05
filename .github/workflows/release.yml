@@ -37,6 +37,7 @@ jobs:
         with:
           name: hyperbola-windows-installer
           path: dist/*.exe
+          if-no-files-found: error
       - name: attach to release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
@@ -73,7 +74,11 @@ jobs:
       - run: node scripts/android-prepare.mjs
       # Debug signing keeps the APK installable without publishing a keystore.
       # A release keystore replaces this once the app is worth signing for real.
-      - run: npx tauri android build --debug --apk
+      #
+      # One APK per ABI: the engine carries a Python runtime and ffmpeg for
+      # every architecture, so a universal build is around 400 MB while a
+      # single-architecture one is a quarter of that.
+      - run: npx tauri android build --debug --apk --split-per-abi
       - name: collect apk
         run: |
           mkdir -p dist
@@ -83,6 +88,7 @@ jobs:
         with:
           name: hyperbola-android-apk
           path: dist/*.apk
+          if-no-files-found: error
       - name: attach to release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
