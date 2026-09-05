@@ -61,6 +61,25 @@ impl Queue {
         self.max_attempts = max_attempts;
     }
 
+    /// Rebuilds a queue from items that were persisted between runs.
+    ///
+    /// A download that was running when the app closed comes back paused: the
+    /// process behind it is gone, and showing it as running would be a lie
+    /// the user cannot act on. Its partial file is still on disk, so resuming
+    /// continues rather than restarts.
+    pub fn restore(&mut self, items: Vec<Download>) {
+        self.next_id = items.iter().map(|d| d.id.0).max().unwrap_or(0) + 1;
+        self.items = items
+            .into_iter()
+            .map(|mut download| {
+                if let DownloadState::Running(progress) = download.state {
+                    download.state = DownloadState::Paused(progress);
+                }
+                download
+            })
+            .collect();
+    }
+
     pub fn items(&self) -> &[Download] {
         &self.items
     }
@@ -390,6 +409,31 @@ mod tests {
         queue.clear_finished();
         assert_eq!(queue.items().len(), 1);
         assert_eq!(queue.items()[0].id, c);
+    }
+
+    #[test]
+    fn restoring_turns_running_downloads_back_into_paused_ones() {
+        let mut original = queue_with(3, 3);
+        let running = original.start_next().unwrap();
+        original.on_progress(running, progress(400, 900.0));
+        let completed = original.start_next().unwrap();
+        original.on_completed(completed, "/out/b.mp4");
+
+        let saved = original.items().to_vec();
+        let mut restored = Queue::new(3);
+        restored.restore(saved);
+
+        match &restored.get(running).unwrap().state {
+            DownloadState::Paused(p) => assert_eq!(p.downloaded_bytes, 400),
+            other => panic!("expected paused, got {other:?}"),
+        }
+        assert!(matches!(
+            restored.get(completed).unwrap().state,
+            DownloadState::Completed { .. }
+        ));
+        // New downloads must not reuse an id that came back from disk.
+        let fresh = restored.add(DownloadOptions::video("https://x/new", "/out"), "new");
+        assert_eq!(fresh, DownloadId(4));
     }
 
     #[test]

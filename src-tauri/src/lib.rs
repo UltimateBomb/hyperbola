@@ -7,6 +7,7 @@ mod settings;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 use hyperbola_core::domain::{
     Container, Download, DownloadId, DownloadOptions, MediaKind, MediaProbe, TimeFrame,
@@ -27,7 +28,12 @@ pub struct AppState {
     /// Cancel signals for downloads that are currently running.
     pub cancels: Mutex<HashMap<DownloadId, oneshot::Sender<()>>>,
     pub config_path: PathBuf,
+    /// Where the queue is kept between runs, so closing the app mid-download
+    /// loses nothing.
+    pub queue_path: PathBuf,
     pub temp_dir: PathBuf,
+    /// Last time the queue was written; progress alone must not hammer the disk.
+    pub last_save: Mutex<Instant>,
 }
 
 /// What the window renders: the queue and its totals in one payload, so the
@@ -82,14 +88,51 @@ impl AddRequest {
     }
 }
 
-/// Pushes the current queue to the window.
+/// How often the queue is written to disk while downloads are running.
+const SAVE_INTERVAL: Duration = Duration::from_secs(2);
+
+/// Pushes the current queue to the window, and writes it to disk now and then
+/// so a crash or a power cut costs at most a couple of seconds of progress.
 pub fn emit_queue(app: &AppHandle) {
     let state = app.state::<AppState>();
     let snapshot = {
         let queue = state.queue.lock().unwrap();
         Snapshot { items: queue.items().to_vec(), stats: queue.stats() }
     };
+    let due = {
+        let mut last = state.last_save.lock().unwrap();
+        let due = last.elapsed() >= SAVE_INTERVAL;
+        if due {
+            *last = Instant::now();
+        }
+        due
+    };
+    if due {
+        write_queue(&state.queue_path, &snapshot.items);
+    }
     let _ = app.emit("queue-changed", snapshot);
+}
+
+/// Writes the queue immediately, for changes worth not losing: a download
+/// added, finished, cancelled or removed.
+pub fn save_queue(app: &AppHandle) {
+    let state = app.state::<AppState>();
+    let items = { state.queue.lock().unwrap().items().to_vec() };
+    *state.last_save.lock().unwrap() = Instant::now();
+    write_queue(&state.queue_path, &items);
+}
+
+fn write_queue(path: &PathBuf, items: &[Download]) {
+    if let Ok(text) = serde_json::to_string(items) {
+        let _ = std::fs::write(path, text);
+    }
+}
+
+fn read_queue(path: &PathBuf) -> Vec<Download> {
+    std::fs::read_to_string(path)
+        .ok()
+        .and_then(|text| serde_json::from_str(&text).ok())
+        .unwrap_or_default()
 }
 
 /// Starts as many queued downloads as the concurrency limit allows.
@@ -147,6 +190,7 @@ fn add_downloads(app: AppHandle, requests: Vec<AddRequest>) -> Vec<DownloadId> {
             })
             .collect()
     };
+    save_queue(&app);
     pump(app);
     ids
 }
@@ -165,6 +209,7 @@ fn pause_download(app: AppHandle, id: DownloadId) {
         state.queue.lock().unwrap().pause(id);
     }
     signal_cancel(&app, id);
+    save_queue(&app);
     pump(app);
 }
 
@@ -174,6 +219,7 @@ fn resume_download(app: AppHandle, id: DownloadId) {
         let state = app.state::<AppState>();
         state.queue.lock().unwrap().resume(id);
     }
+    save_queue(&app);
     pump(app);
 }
 
@@ -184,6 +230,7 @@ fn cancel_download(app: AppHandle, id: DownloadId) {
         state.queue.lock().unwrap().cancel(id);
     }
     signal_cancel(&app, id);
+    save_queue(&app);
     pump(app);
 }
 
@@ -193,6 +240,7 @@ fn retry_download(app: AppHandle, id: DownloadId) {
         let state = app.state::<AppState>();
         state.queue.lock().unwrap().retry(id);
     }
+    save_queue(&app);
     pump(app);
 }
 
@@ -203,6 +251,7 @@ fn remove_download(app: AppHandle, id: DownloadId) {
         let state = app.state::<AppState>();
         state.queue.lock().unwrap().remove(id);
     }
+    save_queue(&app);
     pump(app);
 }
 
@@ -212,6 +261,7 @@ fn clear_finished(app: AppHandle) {
         let state = app.state::<AppState>();
         state.queue.lock().unwrap().clear_finished();
     }
+    save_queue(&app);
     emit_queue(&app);
 }
 
@@ -318,8 +368,10 @@ pub fn run() {
             std::fs::create_dir_all(&temp_dir).ok();
 
             let config_path = config_dir.join("settings.json");
+            let queue_path = config_dir.join("queue.json");
             let settings = Settings::load(&config_path);
-            let queue = Queue::new(settings.max_concurrent);
+            let mut queue = Queue::new(settings.max_concurrent);
+            queue.restore(read_queue(&queue_path));
 
             app.manage(AppState {
                 queue: Mutex::new(queue),
@@ -327,7 +379,9 @@ pub fn run() {
                 deps: Dependencies::new(data_dir.join("bin")),
                 cancels: Mutex::new(HashMap::new()),
                 config_path,
+                queue_path,
                 temp_dir,
+                last_save: Mutex::new(Instant::now()),
             });
 
             // First run, or a dependency the user deleted: fetch what is
