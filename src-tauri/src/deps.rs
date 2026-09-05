@@ -254,6 +254,7 @@ impl Dependencies {
             .find_asset(&must, &must_not)
             .ok_or("no yt-dlp build for this platform")?;
 
+        log::info!("downloading yt-dlp {} ({} bytes)", asset.name, asset.size);
         let target = self.managed_path("yt-dlp");
         let temp = target.with_extension("part");
         self.download(&asset.url, &temp, progress).await?;
@@ -282,8 +283,12 @@ impl Dependencies {
             .unwrap_or_else(|| Version::parse("0"));
 
         let archive = self.bin_dir.join("ffmpeg-download.zip");
+        log::info!("downloading ffmpeg {} ({} bytes)", asset.name, asset.size);
         self.download(&asset.url, &archive, progress).await?;
-        let extracted = extract_ffmpeg(&archive, &self.bin_dir)?;
+        let extracted = extract_ffmpeg(&archive, &self.bin_dir).inspect_err(|e| {
+            log::error!("could not unpack {}: {e}", archive.display());
+        })?;
+        log::info!("unpacked {} ffmpeg binaries", extracted.len());
         let _ = std::fs::remove_file(&archive);
         if extracted.is_empty() {
             return Err("archive contained no ffmpeg binary".into());
@@ -312,7 +317,35 @@ impl Dependencies {
         Ok(target)
     }
 
+    /// Downloads `url` to `target`, verifying that all of it arrived.
+    ///
+    /// A dropped connection leaves a plausible-looking file: the first attempt
+    /// at ffmpeg stopped at 78 MB of 170 MB and the failure only surfaced
+    /// later as an unreadable archive. A short file is now an error, and the
+    /// download is retried before giving up.
     async fn download(
+        &self,
+        url: &str,
+        target: &Path,
+        progress: &(dyn Fn(u64, Option<u64>) + Send + Sync),
+    ) -> Result<(), String> {
+        const ATTEMPTS: u32 = 3;
+        let mut last_error = String::new();
+        for attempt in 1..=ATTEMPTS {
+            match self.download_once(url, target, progress).await {
+                Ok(()) => return Ok(()),
+                Err(e) => {
+                    log::warn!("download attempt {attempt}/{ATTEMPTS} failed for {url}: {e}");
+                    last_error = e;
+                    let _ = tokio::fs::remove_file(target).await;
+                    tokio::time::sleep(std::time::Duration::from_secs(2 * attempt as u64)).await;
+                }
+            }
+        }
+        Err(last_error)
+    }
+
+    async fn download_once(
         &self,
         url: &str,
         target: &Path,
@@ -327,12 +360,21 @@ impl Dependencies {
         let mut downloaded = 0u64;
         let mut stream = response.bytes_stream();
         while let Some(chunk) = stream.next().await {
-            let chunk = chunk.map_err(|e| e.to_string())?;
+            let chunk = chunk.map_err(|e| format!("connection dropped after {downloaded} bytes: {e}"))?;
             downloaded += chunk.len() as u64;
             file.write_all(&chunk).await.map_err(|e| e.to_string())?;
             progress(downloaded, total);
         }
         file.flush().await.map_err(|e| e.to_string())?;
+        drop(file);
+
+        if let Some(expected) = total {
+            if downloaded != expected {
+                return Err(format!(
+                    "download stopped short: got {downloaded} of {expected} bytes"
+                ));
+            }
+        }
         Ok(())
     }
 }
@@ -380,10 +422,6 @@ fn ffmpeg_asset_patterns() -> Option<(Vec<&'static str>, Vec<&'static str>)> {
 fn extract_ffmpeg(archive: &Path, bin_dir: &Path) -> Result<Vec<PathBuf>, String> {
     let file = std::fs::File::open(archive).map_err(|e| e.to_string())?;
     let mut zip = zip::ZipArchive::new(file).map_err(|e| e.to_string())?;
-    let wanted = [
-        format!("ffmpeg{}", std::env::consts::EXE_SUFFIX),
-        format!("ffprobe{}", std::env::consts::EXE_SUFFIX),
-    ];
     let mut written = Vec::new();
     for index in 0..zip.len() {
         let mut entry = zip.by_index(index).map_err(|e| e.to_string())?;
@@ -391,7 +429,10 @@ fn extract_ffmpeg(archive: &Path, bin_dir: &Path) -> Result<Vec<PathBuf>, String
             continue;
         }
         let name = entry.name().rsplit('/').next().unwrap_or("").to_string();
-        if !wanted.contains(&name) {
+        // The Windows archive carries .exe, the Linux one does not; matching
+        // on the stem covers both without a second rule.
+        let stem = name.strip_suffix(".exe").unwrap_or(&name);
+        if stem != "ffmpeg" && stem != "ffprobe" {
             continue;
         }
         let target = bin_dir.join(&name);
@@ -443,4 +484,37 @@ pub fn which(program: &str) -> Option<PathBuf> {
             candidate.is_file().then_some(candidate)
         })
     })
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Runs the extractor against a real BtbN archive when one is available:
+    ///
+    ///   HYPERBOLA_TEST_ZIP=/path/to/ffmpeg-master-latest-win64-gpl.zip cargo test -p hyperbola
+    ///
+    /// Skipped otherwise, because a 170 MB download does not belong in a
+    /// normal test run.
+    #[test]
+    fn extracts_ffmpeg_from_a_real_archive() {
+        let Some(archive) = std::env::var_os("HYPERBOLA_TEST_ZIP") else {
+            return;
+        };
+        let dir = std::env::temp_dir().join("hyperbola-extract-test");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let written = extract_ffmpeg(Path::new(&archive), &dir).expect("extraction failed");
+        let names: Vec<String> = written
+            .iter()
+            .map(|p| p.file_name().unwrap().to_string_lossy().to_string())
+            .collect();
+        assert!(names.iter().any(|n| n.starts_with("ffmpeg")), "no ffmpeg in {names:?}");
+        assert!(names.iter().any(|n| n.starts_with("ffprobe")), "no ffprobe in {names:?}");
+        for path in &written {
+            assert!(std::fs::metadata(path).unwrap().len() > 1_000_000, "{path:?} looks empty");
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

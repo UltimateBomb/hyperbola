@@ -328,6 +328,14 @@ async fn check_updates(app: AppHandle) -> UpdateReport {
     report
 }
 
+/// A dependency that could not be installed, pushed to the window so a
+/// failure during the automatic startup install is visible rather than silent.
+#[derive(Debug, Clone, Serialize)]
+struct DependencyError {
+    component: Component,
+    message: String,
+}
+
 /// Progress of a dependency download, pushed to the window while it runs.
 #[derive(Debug, Clone, Serialize)]
 struct DependencyProgress {
@@ -353,10 +361,22 @@ async fn install_update(app: AppHandle, component: Component) -> Result<String, 
     if component == Component::App {
         return install_app_update(app, &progress).await;
     }
-    let version = {
+    let installed = {
         let state = app.state::<AppState>();
-        state.deps.install(component, channel, &progress).await?
+        state.deps.install(component, channel, &progress).await
     };
+    let version = match installed {
+        Ok(version) => version,
+        Err(message) => {
+            log::error!("installing {} failed: {message}", component.display_name());
+            let _ = app.emit(
+                "dependency-error",
+                DependencyError { component, message: message.clone() },
+            );
+            return Err(message);
+        }
+    };
+    log::info!("installed {} {version}", component.display_name());
     let _ = check_updates(app).await;
     Ok(version.as_str().to_string())
 }
@@ -435,6 +455,17 @@ async fn pick_output_folder(app: AppHandle) -> Result<Option<String>, String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // A log file is the difference between "the update did not happen"
+        // and knowing why. It lives next to the app's data.
+        .plugin(
+            tauri_plugin_log::Builder::new()
+                .target(tauri_plugin_log::Target::new(
+                    tauri_plugin_log::TargetKind::LogDir { file_name: Some("hyperbola".into()) },
+                ))
+                .target(tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout))
+                .level(log::LevelFilter::Info)
+                .build(),
+        )
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_clipboard_manager::init())
@@ -487,6 +518,7 @@ pub fn run() {
                     let state = startup.state::<AppState>();
                     state.deps.check(channel, env!("CARGO_PKG_VERSION")).await
                 };
+                log::info!("update check: {}", report.summary());
                 let _ = startup.emit("updates-changed", report.clone());
                 if !auto_install {
                     return;
@@ -495,9 +527,17 @@ pub fn run() {
                     if status.component == Component::App {
                         continue;
                     }
-                    let handle = startup.clone();
                     let component = status.component;
-                    let _ = install_update(handle, component).await;
+                    log::info!("installing {} automatically", component.display_name());
+                    if let Err(message) = install_update(startup.clone(), component).await {
+                        // Silence here used to mean the user saw a working app
+                        // that could not merge a file, with nothing to read.
+                        log::error!("could not install {}: {message}", component.display_name());
+                        let _ = startup.emit(
+                            "dependency-error",
+                            DependencyError { component, message },
+                        );
+                    }
                 }
             });
             Ok(())

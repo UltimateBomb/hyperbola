@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { listen } from "@tauri-apps/api/event";
   import { api, humanBytes, type Component, type ComponentStatus, type DependencyPaths, type UpdateReport } from "./api";
 
   let {
@@ -12,12 +13,23 @@
   } = $props();
 
   let busy: Component | null = $state(null);
+  let failures: Record<string, string> = $state({});
   let checking = $state(false);
   let paths: DependencyPaths | null = $state(null);
   let error: string | null = $state(null);
 
   $effect(() => {
     api.dependencyPaths().then((p) => (paths = p)).catch(() => {});
+  });
+
+  // A failed automatic install used to leave the app looking fine while it
+  // could not merge a file. Now it says so.
+  $effect(() => {
+    const unlisten = listen<{ component: Component; message: string }>(
+      "dependency-error",
+      (event) => (failures = { ...failures, [event.payload.component]: event.payload.message }),
+    );
+    return () => { unlisten.then((off) => off()); };
   });
 
   const names: Record<Component, string> = { app: "Hyperbola", yt_dlp: "yt-dlp", ffmpeg: "ffmpeg" };
@@ -51,6 +63,8 @@
     busy = component;
     try {
       await api.installUpdate(component);
+      const { [component]: _cleared, ...rest } = failures;
+      failures = rest;
       onrefresh();
     } catch (e) {
       error = String(e);
@@ -107,6 +121,9 @@
         </div>
         <div class="muted small">{describe(status)}</div>
         <div class="muted small why">{why[status.component]}</div>
+        {#if failures[status.component]}
+          <div class="failure small">{failures[status.component]}</div>
+        {/if}
       </div>
       <div class="right">
         {#if status.component === "app"}
@@ -165,5 +182,6 @@
   .bar { grid-column: 1 / -1; height: 5px; background: var(--bg-soft); border-radius: 999px; overflow: hidden; }
   .fill { height: 100%; background: linear-gradient(90deg, #22d3ee, #a78bfa); transition: width 150ms linear; }
   .link { color: var(--accent); font-size: 13px; }
+  .failure { color: var(--err); }
   footer { display: flex; flex-direction: column; gap: 2px; padding-top: 4px; word-break: break-all; }
 </style>

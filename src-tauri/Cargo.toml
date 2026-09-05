@@ -31,3 +31,5 @@ reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"
 futures-util = "0.3"
 zip = { version = "2", default-features = false, features = ["deflate"] }
 dirs = "5"
+log = "0.4"
+tauri-plugin-log = "2"
