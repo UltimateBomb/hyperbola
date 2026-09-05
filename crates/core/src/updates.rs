@@ -174,6 +174,10 @@ pub struct Release {
     pub prerelease: bool,
     pub assets: Vec<ReleaseAsset>,
     pub notes: Option<String>,
+    /// ISO-8601 publication time. Rolling releases — ffmpeg's nightly builds,
+    /// for instance — reuse one tag forever, so the date is the only thing
+    /// that tells two of them apart.
+    pub published_at: Option<String>,
 }
 
 impl Release {
@@ -188,6 +192,19 @@ impl Release {
     }
 }
 
+/// Turns an ISO-8601 timestamp (`2026-09-05T12:30:00Z`) into a comparable
+/// version (`2026.09.05`). Used for release feeds that publish under one
+/// rolling tag, where the date is the only version there is.
+pub fn version_from_publish_date(published_at: &str) -> Option<Version> {
+    let date = published_at.split('T').next()?;
+    let mut parts = date.split('-');
+    let (y, m, d) = (parts.next()?, parts.next()?, parts.next()?);
+    if y.len() != 4 || m.len() != 2 || d.len() != 2 {
+        return None;
+    }
+    Some(Version::parse(&format!("{y}.{m}.{d}")))
+}
+
 /// Parses the JSON array returned by `GET /repos/{owner}/{repo}/releases`.
 pub fn parse_releases(json: &str) -> Result<Vec<Release>, Error> {
     let raw: Vec<RawRelease> =
@@ -200,6 +217,7 @@ pub fn parse_releases(json: &str) -> Result<Vec<Release>, Error> {
             tag: r.tag_name.unwrap_or_default(),
             prerelease: r.prerelease,
             notes: r.body,
+            published_at: r.published_at,
             assets: r
                 .assets
                 .into_iter()
@@ -234,6 +252,7 @@ struct RawRelease {
     #[serde(default)]
     draft: bool,
     body: Option<String>,
+    published_at: Option<String>,
     #[serde(default)]
     assets: Vec<RawAsset>,
 }
@@ -335,6 +354,7 @@ mod tests {
 
     const RELEASES_JSON: &str = r#"[
         {"tag_name": "2026.03.17", "prerelease": false, "draft": false, "body": "stable",
+         "published_at": "2026-03-17T09:15:00Z",
          "assets": [
             {"name": "yt-dlp.exe", "browser_download_url": "https://x/yt-dlp.exe", "size": 17000000},
             {"name": "yt-dlp_arm64.exe", "browser_download_url": "https://x/arm.exe", "size": 16000000},
@@ -375,6 +395,16 @@ mod tests {
             "yt-dlp.exe"
         );
         assert!(stable.find_asset(&["macos"], &[]).is_none());
+    }
+
+    #[test]
+    fn publication_date_becomes_a_version_for_rolling_tags() {
+        let releases = parse_releases(RELEASES_JSON).unwrap();
+        let stable = latest_release(&releases, Channel::Stable).unwrap();
+        let published = stable.published_at.as_deref().unwrap();
+        assert_eq!(version_from_publish_date(published).unwrap(), v("2026.03.17"));
+        assert!(version_from_publish_date("garbage").is_none());
+        assert!(version_from_publish_date("2026-3-5T00:00:00Z").is_none());
     }
 
     #[test]
