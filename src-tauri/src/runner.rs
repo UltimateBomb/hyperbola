@@ -208,6 +208,18 @@ pub async fn run(
         }
     };
 
+    // The engine can finish between two polls, and the last lines it wrote
+    // are the ones that matter: the final path arrives at the very end.
+    let handle = app.clone();
+    let pid = process_id.clone();
+    if let Ok(Ok(output)) = tauri::async_runtime::spawn_blocking(move || handle.ytdlp().poll_output(&pid)).await {
+        for line in output.lines {
+            if let Some(event) = parse_line(&line) {
+                apply(&app, id, event, &mut destination, &mut last_error, &mut last_emit);
+            }
+        }
+    }
+
     let failed = match outcome {
         Ok(Ok(response)) if response.exit_code == 0 => None,
         Ok(Ok(response)) => Some(
@@ -229,7 +241,16 @@ pub async fn run(
 
     // yt-dlp can only write inside the app's own directory; hand the finished
     // file to the folder the user picked, or to Downloads.
-    let source = destination.unwrap_or_else(|| options.output_dir.clone());
+    let Some(source) = destination else {
+        finish_failed(
+            &app,
+            id,
+            "the engine finished without saying where it put the file".to_string(),
+            true,
+        );
+        crate::pump(app.clone());
+        return;
+    };
     let handle = app.clone();
     let published = tauri::async_runtime::spawn_blocking(move || {
         handle.ytdlp().publish(PublishRequest {
