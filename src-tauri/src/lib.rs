@@ -459,10 +459,14 @@ pub fn run() {
         // and knowing why. It lives next to the app's data.
         .plugin(
             tauri_plugin_log::Builder::new()
-                .target(tauri_plugin_log::Target::new(
-                    tauri_plugin_log::TargetKind::LogDir { file_name: Some("hyperbola".into()) },
-                ))
-                .target(tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout))
+                // targets() replaces the defaults; adding to them would write
+                // every line to the log file twice.
+                .targets([
+                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::LogDir {
+                        file_name: Some("hyperbola".into()),
+                    }),
+                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout),
+                ])
                 .level(log::LevelFilter::Info)
                 .build(),
         )
