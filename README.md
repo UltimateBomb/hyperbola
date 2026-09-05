@@ -15,11 +15,16 @@ Early. The engine is written and tested; the shells are being built.
 
 | Piece | State |
 |---|---|
-| `hyperbola-core` — probing, arguments, progress, queue, updates | working, 74 tests |
-| `hyperbola-runner` + CLI harness | working; real downloads verified |
-| Windows shell (Tauri + WebView2) | builds; update centre wired |
-| Android shell (Tauri + youtubedl-android) | written, not yet run on a device |
-| CI → Windows installer and APK | building both |
+| `hyperbola-core` — probing, arguments, progress, queue, updates | 77 tests |
+| `hyperbola-runner` + CLI harness | real downloads verified on macOS and Windows |
+| Windows app | installs, runs, and fetches yt-dlp and ffmpeg by itself on a clean machine |
+| Update centre | app, yt-dlp and ffmpeg in one list; failures shown, not swallowed |
+| Android app | APK builds with the engine inside; **not yet run on a device** |
+| CI | Windows installer and one APK per ABI on every run |
+
+Verified end to end on Windows: a fresh install downloaded yt-dlp (17 MB) and
+ffmpeg (170 MB archive) unattended, and the same engine then pulled a 59 MB
+video down to the exact path it reported.
 
 ## Building
 
