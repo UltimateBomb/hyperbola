@@ -13,6 +13,7 @@ pub mod domain;
 pub mod probe;
 pub mod progress;
 pub mod queue;
+pub mod retry;
 pub mod updates;
 pub mod version;
 
@@ -24,6 +25,7 @@ pub use domain::{
 pub use probe::parse_probe;
 pub use progress::{parse_line, Event};
 pub use queue::{FailureOutcome, Queue, QueueStats};
+pub use retry::is_retryable;
 pub use updates::{Channel, Component, ComponentStatus, UpdateReport, UpdateState};
 pub use version::Version;
 

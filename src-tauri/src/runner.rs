@@ -221,7 +221,7 @@ pub async fn run(
     };
 
     if let Some(message) = failed {
-        let retryable = is_retryable(&message);
+        let retryable = hyperbola_core::retry::is_retryable(&message);
         finish_failed(&app, id, message, retryable);
         crate::pump(app.clone());
         return;
