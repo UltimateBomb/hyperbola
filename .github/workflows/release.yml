@@ -28,8 +28,11 @@ jobs:
         shell: bash
         run: |
           mkdir -p dist
-          find src-tauri/target/release/bundle -name "*.exe" -exec cp {} dist/ \;
+          # src-tauri is a workspace member, so cargo writes to the workspace
+          # target directory, not to src-tauri/target.
+          find target src-tauri/target -name "*-setup.exe" -exec cp {} dist/ \; 2>/dev/null || true
           ls -la dist
+          test -n "$(ls -A dist)"
       - uses: actions/upload-artifact@v4
         with:
           name: hyperbola-windows-installer
