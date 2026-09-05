@@ -163,6 +163,8 @@ export const api = {
   checkUpdates: () => invoke<UpdateReport>("check_updates"),
   installUpdate: (component: Component) => invoke<string>("install_update", { component }),
   appVersion: () => invoke<string>("app_version"),
+  platform: () => invoke<string>("app_platform"),
+  pickOutputFolder: () => invoke<string | null>("pick_output_folder"),
 };
 
 export function humanBytes(bytes: number | null | undefined): string {

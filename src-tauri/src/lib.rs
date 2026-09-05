@@ -32,6 +32,9 @@ pub struct AppState {
     /// loses nothing.
     pub queue_path: PathBuf,
     pub temp_dir: PathBuf,
+    /// Where downloads are written while they run. Android needs this to be
+    /// app-private; the desktop writes straight into the user's folder.
+    pub staging_dir: PathBuf,
     /// Last time the queue was written; progress alone must not hammer the disk.
     pub last_save: Mutex<Instant>,
 }
@@ -58,7 +61,11 @@ pub struct AddRequest {
 }
 
 impl AddRequest {
-    fn into_options(self, settings: &Settings) -> (DownloadOptions, String) {
+    /// `staging` is where yt-dlp is allowed to write. On the desktop that is
+    /// the user's chosen folder; on Android it is the app's private directory,
+    /// because that is the only place a plain path can point to — the file is
+    /// moved to the user's folder once it is finished.
+    fn into_options(self, settings: &Settings, staging: &PathBuf) -> (DownloadOptions, String) {
         let container = match self.kind {
             MediaKind::Video => settings.video_container,
             MediaKind::Audio => settings.audio_container,
@@ -70,7 +77,7 @@ impl AddRequest {
             container,
             format_id: self.format_id,
             max_height: self.max_height,
-            output_dir: settings.download_dir.clone(),
+            output_dir: staging.clone(),
             filename: self.filename,
             subtitle_languages: settings.subtitle_languages.clone(),
             embed_subtitles: settings.embed_subtitles,
@@ -180,12 +187,16 @@ fn add_downloads(app: AppHandle, requests: Vec<AddRequest>) -> Vec<DownloadId> {
     let ids = {
         let state = app.state::<AppState>();
         let settings = state.settings.lock().unwrap().clone();
+        #[cfg(target_os = "android")]
+        let staging = state.staging_dir.clone();
+        #[cfg(not(target_os = "android"))]
+        let staging = settings.download_dir.clone();
         let mut queue = state.queue.lock().unwrap();
         queue.set_max_concurrent(settings.max_concurrent);
         requests
             .into_iter()
             .map(|request| {
-                let (options, title) = request.into_options(&settings);
+                let (options, title) = request.into_options(&settings, &staging);
                 queue.add(options, title)
             })
             .collect()
@@ -382,6 +393,45 @@ fn app_version() -> &'static str {
     env!("CARGO_PKG_VERSION")
 }
 
+/// The window needs to know which shell it is running in: the folder picker,
+/// and what "where files go" means, differ between the two.
+#[tauri::command]
+fn app_platform() -> &'static str {
+    std::env::consts::OS
+}
+
+/// Android's folder picker. The system remembers the grant, so this is asked
+/// once and the answer survives restarts.
+#[tauri::command]
+async fn pick_output_folder(app: AppHandle) -> Result<Option<String>, String> {
+    #[cfg(target_os = "android")]
+    {
+        use tauri_plugin_ytdlp::YtdlpExt;
+        let handle = app.clone();
+        let selection = tauri::async_runtime::spawn_blocking(move || handle.ytdlp().pick_output_folder())
+            .await
+            .map_err(|e| e.to_string())?
+            .map_err(|e| e.to_string())?;
+        let Some(uri) = selection.uri.clone() else {
+            return Ok(None);
+        };
+        let label = selection.label.clone().unwrap_or_else(|| "Selected folder".to_string());
+        {
+            let state = app.state::<AppState>();
+            let mut settings = state.settings.lock().unwrap();
+            settings.android_tree_uri = Some(uri);
+            settings.download_dir = PathBuf::from(&label);
+            let _ = settings.save(&state.config_path);
+        }
+        Ok(Some(label))
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = app;
+        Err("this platform uses the system file dialog".to_string())
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -394,8 +444,10 @@ pub fn run() {
             let config_dir = handle.path().app_config_dir()?;
             let data_dir = handle.path().app_data_dir()?;
             let temp_dir = handle.path().app_cache_dir()?.join("partials");
+            let staging_dir = data_dir.join("downloads");
             std::fs::create_dir_all(&config_dir).ok();
             std::fs::create_dir_all(&temp_dir).ok();
+            std::fs::create_dir_all(&staging_dir).ok();
 
             let config_path = config_dir.join("settings.json");
             let queue_path = config_dir.join("queue.json");
@@ -410,6 +462,7 @@ pub fn run() {
                 cancels: Mutex::new(HashMap::new()),
                 config_path,
                 queue_path,
+                staging_dir,
                 temp_dir,
                 last_save: Mutex::new(Instant::now()),
             });
@@ -465,6 +518,8 @@ pub fn run() {
             check_updates,
             install_update,
             app_version,
+            app_platform,
+            pick_output_folder,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Hyperbola");

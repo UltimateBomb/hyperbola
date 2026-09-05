@@ -11,7 +11,19 @@
   let cookieBrowser = $state(draft.cookies.source === "browser" ? draft.cookies.value : "");
   let subtitleText = $state(draft.subtitle_languages.join(", "));
 
+  let platform = $state("");
+  $effect(() => {
+    api.platform().then((p) => (platform = p)).catch(() => {});
+  });
+
   async function pickFolder() {
+    // Android has no file paths to browse: the system hands back a folder
+    // grant instead, and the app remembers it.
+    if (platform === "android") {
+      const label = await api.pickOutputFolder();
+      if (label) draft.download_dir = label;
+      return;
+    }
     const chosen = await open({ directory: true, defaultPath: draft.download_dir });
     if (typeof chosen === "string") draft.download_dir = chosen;
   }
@@ -35,7 +47,7 @@
   <div class="field">
     <span class="label muted">Save downloads to</span>
     <div class="inline">
-      <input type="text" bind:value={draft.download_dir} />
+      <input type="text" bind:value={draft.download_dir} readonly={platform === "android"} />
       <button onclick={pickFolder}>Browse…</button>
     </div>
   </div>
