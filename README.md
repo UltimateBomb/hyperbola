@@ -15,18 +15,25 @@ Early. The engine is written and tested; the shells are being built.
 
 | Piece | State |
 |---|---|
-| `hyperbola-core` — probing, arguments, progress, queue, updates | working, 69 tests |
-| Windows shell (Tauri + WebView2) | in progress |
-| Android shell (Tauri + youtubedl-android) | in progress |
-| CI → signed Windows installer and APK in Releases | planned |
+| `hyperbola-core` — probing, arguments, progress, queue, updates | working, 74 tests |
+| `hyperbola-runner` + CLI harness | working; real downloads verified |
+| Windows shell (Tauri + WebView2) | builds; update centre wired |
+| Android shell (Tauri + youtubedl-android) | written, not yet run on a device |
+| CI → Windows installer and APK | building both |
 
 ## Building
 
 ```bash
-cargo test          # the engine
-```
+cargo test                       # the engine and the runner
 
-Shell build instructions land with the shells.
+# Run the engine without a window — needs yt-dlp on PATH
+cargo run -p hyperbola-cli -- probe <url>
+cargo run -p hyperbola-cli -- get <url> --max-height 1080 --out ~/Downloads
+
+# The desktop app
+npm ci && npm --prefix ui ci
+npm run dev                      # or: npm run build
+```
 
 ## Licence
 

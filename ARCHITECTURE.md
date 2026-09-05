@@ -34,7 +34,7 @@ release, with the same tests behind it.
 ## Layout
 
 ```
-crates/core/            hyperbola-core — the engine (no I/O, 100% unit-tested)
+crates/core/            hyperbola-core — the engine (no I/O, unit-tested)
   version.rs            one comparison rule for app / yt-dlp / ffmpeg versions
   domain.rs             Download, Format, MediaItem, Progress, DownloadState
   probe.rs              yt-dlp --dump-single-json  ->  MediaProbe
@@ -43,12 +43,29 @@ crates/core/            hyperbola-core — the engine (no I/O, 100% unit-tested)
   queue.rs              the queue state machine (concurrency, retry, pause)
   updates.rs            the update center: what is stale, which asset to fetch
 
-crates/runner-desktop/  spawns yt-dlp.exe and ffmpeg.exe, installs updates
+crates/runner/          spawns yt-dlp and reads it back (desktop half)
+crates/cli/             the same engine without a window — a test harness
 plugins/ytdlp-android/  Tauri plugin: Kotlin wrapper over youtubedl-android
-ui/                     one web UI, shared by both shells
 src-tauri/              the Tauri application (Windows + Android targets)
+  deps.rs               finds, versions and installs yt-dlp and ffmpeg
+  runner.rs             connects the queue to whichever runner the platform has
+ui/                     one web UI, shared by both shells
 .github/workflows/      builds Windows installer and Android APK -> Releases
 ```
+
+## Proving it works
+
+Unit tests cover the rules; they cannot cover yt-dlp itself. The harness
+exists for that, and it runs the same code the app runs:
+
+```bash
+cargo run -p hyperbola-cli -- probe https://archive.org/details/BigBuckBunny_124
+cargo run -p hyperbola-cli -- get   https://archive.org/details/BigBuckBunny_124 --max-height 360 --out ~/Downloads
+```
+
+Both bugs found on its first run were invisible to unit tests: a bare `null`
+from yt-dlp surfacing as a serde message, and the finished file's path being
+the temporary one, which would have broken every "open file" click.
 
 ## Data flow, one download
 
