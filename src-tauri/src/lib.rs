@@ -339,12 +339,42 @@ async fn install_update(app: AppHandle, component: Component) -> Result<String, 
             DependencyProgress { component, downloaded, total },
         );
     };
+    if component == Component::App {
+        return install_app_update(app, &progress).await;
+    }
     let version = {
         let state = app.state::<AppState>();
         state.deps.install(component, channel, &progress).await?
     };
     let _ = check_updates(app).await;
     Ok(version.as_str().to_string())
+}
+
+/// Updating the app itself is not a file swap: the running program cannot
+/// replace its own files on Windows, so the installer is downloaded, started,
+/// and the app steps aside for it.
+async fn install_app_update(
+    app: AppHandle,
+    progress: &(dyn Fn(u64, Option<u64>) + Send + Sync),
+) -> Result<String, String> {
+    let installer = {
+        let state = app.state::<AppState>();
+        let into = state.temp_dir.join("updates");
+        state.deps.download_app_installer(&into, progress).await?
+    };
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new(&installer)
+            .spawn()
+            .map_err(|e| format!("could not start the installer: {e}"))?;
+        let handle = app.clone();
+        // Give the installer a moment to appear before the window disappears.
+        tauri::async_runtime::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(600)).await;
+            handle.exit(0);
+        });
+    }
+    Ok(installer.display().to_string())
 }
 
 #[tauri::command]

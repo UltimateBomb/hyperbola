@@ -292,6 +292,26 @@ impl Dependencies {
         Ok(version)
     }
 
+    /// Fetches the installer for the newest release of Hyperbola itself and
+    /// returns where it landed. Running it is the shell's business: on
+    /// Windows the app has to exit before its own files can be replaced.
+    pub async fn download_app_installer(
+        &self,
+        into: &Path,
+        progress: &(dyn Fn(u64, Option<u64>) + Send + Sync),
+    ) -> Result<PathBuf, String> {
+        let (must, must_not) = app_asset_patterns().ok_or("no installer for this platform")?;
+        let releases = self.releases(APP_REPO).await?;
+        let release = latest_release(&releases, Channel::Stable).ok_or("no release found")?;
+        let asset = release
+            .find_asset(&must, &must_not)
+            .ok_or("this release has no build for this platform")?;
+        let _ = std::fs::create_dir_all(into);
+        let target = into.join(&asset.name);
+        self.download(&asset.url, &target, progress).await?;
+        Ok(target)
+    }
+
     async fn download(
         &self,
         url: &str,
@@ -331,6 +351,17 @@ fn ytdlp_asset_patterns() -> (Vec<&'static str>, Vec<&'static str>) {
         (vec!["yt-dlp_linux_aarch64"], vec![])
     } else {
         (vec!["yt-dlp_linux"], vec!["aarch64", "armv7"])
+    }
+}
+
+/// How Hyperbola's own release assets are named per platform.
+fn app_asset_patterns() -> Option<(Vec<&'static str>, Vec<&'static str>)> {
+    if cfg!(target_os = "windows") {
+        Some((vec!["setup.exe"], vec![]))
+    } else if cfg!(target_os = "android") {
+        Some((vec![".apk"], vec![]))
+    } else {
+        None
     }
 }
 

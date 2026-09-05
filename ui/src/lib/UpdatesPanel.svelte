@@ -59,6 +59,8 @@
     }
   }
 
+  // The app update restarts the program, so it stays a deliberate click
+  // rather than something that happens in the middle of a batch.
   async function installAll() {
     for (const status of actionable) {
       if (status.component === "app") continue;
@@ -109,7 +111,9 @@
       <div class="right">
         {#if status.component === "app"}
           {#if status.state.state === "update_available"}
-            <a class="link" href={`https://github.com/UltimateBomb/hyperbola/releases/tag/${status.state.to}`} target="_blank" rel="noreferrer">Release notes</a>
+            <button onclick={() => install("app")} disabled={busy !== null}>
+              {busy === "app" ? "Downloading…" : "Update and restart"}
+            </button>
           {/if}
         {:else if status.state.state === "update_available" || status.state.state === "missing"}
           <button onclick={() => install(status.component)} disabled={busy !== null}>
