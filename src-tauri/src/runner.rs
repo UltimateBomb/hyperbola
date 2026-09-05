@@ -22,6 +22,7 @@ use crate::AppState;
 /// a human can read.
 const EMIT_INTERVAL: Duration = Duration::from_millis(200);
 
+#[cfg(not(target_os = "android"))]
 fn command(program: &PathBuf) -> Command {
     #[allow(unused_mut)]
     let mut command = Command::new(program);
@@ -34,6 +35,7 @@ fn command(program: &PathBuf) -> Command {
 }
 
 /// Reads a URL's metadata without downloading anything.
+#[cfg(not(target_os = "android"))]
 pub async fn probe(app: &AppHandle, url: &str) -> Result<MediaProbe, String> {
     let (ytdlp, args) = {
         let state = app.state::<AppState>();
@@ -68,6 +70,7 @@ pub async fn probe(app: &AppHandle, url: &str) -> Result<MediaProbe, String> {
 }
 
 /// Runs one download to completion, feeding every event back into the queue.
+#[cfg(not(target_os = "android"))]
 pub async fn run(app: AppHandle, id: DownloadId, options: DownloadOptions, cancel: oneshot::Receiver<()>) {
     let prepared = {
         let state = app.state::<AppState>();
@@ -231,11 +234,160 @@ pub fn is_retryable(message: &str) -> bool {
     !PERMANENT.iter().any(|needle| text.contains(needle))
 }
 
+
+// ---------------------------------------------------------------------------
+// Android
+//
+// No process is spawned here: the engine lives inside the APK as native
+// libraries and is driven through the plugin. Everything above the process
+// boundary — the arguments, the parser, the queue — is the same code the
+// desktop uses.
+// ---------------------------------------------------------------------------
+
+#[cfg(target_os = "android")]
+pub async fn probe(app: &AppHandle, url: &str) -> Result<MediaProbe, String> {
+    use tauri_plugin_ytdlp::{ProbeRequest, YtdlpExt};
+
+    let args = {
+        let state = app.state::<AppState>();
+        let settings = state.settings.lock().unwrap();
+        let env = state.runner_env(&settings);
+        build_probe_args(url, &settings.cookies, settings.proxy.as_deref(), &env)
+    };
+    let handle = app.clone();
+    let url_owned = url.to_string();
+    let response = tauri::async_runtime::spawn_blocking(move || {
+        handle.ytdlp().probe(ProbeRequest {
+            url: url_owned.clone(),
+            // The engine puts the URL first; the plugin passes it separately.
+            args: args.into_iter().skip(1).collect(),
+        })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())?;
+    parse_probe(url, &response.json).map_err(|e| e.to_string())
+}
+
+#[cfg(target_os = "android")]
+pub async fn run(
+    app: AppHandle,
+    id: DownloadId,
+    options: DownloadOptions,
+    cancel: oneshot::Receiver<()>,
+) {
+    use tauri_plugin_ytdlp::{DownloadRequest, PublishRequest, YtdlpExt};
+
+    let process_id = format!("hyperbola-{}", id.0);
+    let (args, tree_uri) = {
+        let state = app.state::<AppState>();
+        let settings = state.settings.lock().unwrap();
+        let env = state.runner_env(&settings);
+        (build_download_args(&options, &env), settings.android_tree_uri.clone())
+    };
+
+    let request = DownloadRequest {
+        id: process_id.clone(),
+        url: options.url.clone(),
+        args: args.into_iter().skip(1).collect(),
+        output_dir: options.output_dir.display().to_string(),
+    };
+    let engine = app.clone();
+    let mut download = tauri::async_runtime::spawn_blocking(move || engine.ytdlp().download(request));
+
+    let mut destination: Option<PathBuf> = None;
+    let mut last_error: Option<String> = None;
+    let mut last_emit = Instant::now() - EMIT_INTERVAL;
+    let mut cancel = cancel;
+    let mut poll = tokio::time::interval(Duration::from_millis(300));
+
+    let outcome = loop {
+        tokio::select! {
+            _ = &mut cancel => {
+                let handle = app.clone();
+                let id = process_id.clone();
+                let _ = tauri::async_runtime::spawn_blocking(move || handle.ytdlp().cancel(&id)).await;
+                crate::emit_queue(&app);
+                crate::pump(app.clone());
+                return;
+            }
+            _ = poll.tick() => {
+                let handle = app.clone();
+                let pid = process_id.clone();
+                let polled = tauri::async_runtime::spawn_blocking(move || handle.ytdlp().poll_output(&pid)).await;
+                if let Ok(Ok(output)) = polled {
+                    for line in output.lines {
+                        if let Some(event) = parse_line(&line) {
+                            apply(&app, id, event, &mut destination, &mut last_error, &mut last_emit);
+                        }
+                    }
+                }
+            }
+            result = &mut download => break result,
+        }
+    };
+
+    let failed = match outcome {
+        Ok(Ok(response)) if response.exit_code == 0 => None,
+        Ok(Ok(response)) => Some(
+            last_error
+                .clone()
+                .or_else(|| response.stderr.lines().last().map(str::to_string))
+                .unwrap_or_else(|| format!("the engine exited with {}", response.exit_code)),
+        ),
+        Ok(Err(e)) => Some(e.to_string()),
+        Err(e) => Some(e.to_string()),
+    };
+
+    if let Some(message) = failed {
+        let retryable = is_retryable(&message);
+        finish_failed(&app, id, message, retryable);
+        crate::pump(app.clone());
+        return;
+    }
+
+    // yt-dlp can only write inside the app's own directory; hand the finished
+    // file to the folder the user picked, or to Downloads.
+    let source = destination.unwrap_or_else(|| options.output_dir.clone());
+    let handle = app.clone();
+    let published = tauri::async_runtime::spawn_blocking(move || {
+        handle.ytdlp().publish(PublishRequest {
+            source_path: source.display().to_string(),
+            tree_uri,
+        })
+    })
+    .await;
+
+    match published {
+        Ok(Ok(result)) => {
+            let state = app.state::<AppState>();
+            state.queue.lock().unwrap().on_completed(id, PathBuf::from(result.display_path));
+        }
+        Ok(Err(e)) => {
+            finish_failed(&app, id, e.to_string(), false);
+            crate::pump(app.clone());
+            return;
+        }
+        Err(e) => {
+            finish_failed(&app, id, e.to_string(), false);
+            crate::pump(app.clone());
+            return;
+        }
+    }
+    crate::emit_queue(&app);
+    crate::pump(app.clone());
+}
+
 /// Builds the environment yt-dlp runs in from the current settings.
 impl AppState {
     pub fn runner_env(&self, settings: &crate::settings::Settings) -> RunnerEnv {
         RunnerEnv {
             temp_dir: self.temp_dir.clone(),
+            // On Android ffmpeg and the JS runtime come from the engine
+            // library itself; pointing yt-dlp at a path would break it.
+            #[cfg(target_os = "android")]
+            ffmpeg_path: None,
+            #[cfg(not(target_os = "android"))]
             ffmpeg_path: self.deps.ffmpeg_path(),
             plugin_dir: None,
             js_runtime: None,

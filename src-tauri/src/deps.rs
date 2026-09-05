@@ -140,17 +140,32 @@ impl Dependencies {
         }
     }
 
+    /// Newest yt-dlp version on `channel`, straight from the release feed.
+    /// Android reuses this: the engine there is the same yt-dlp, only
+    /// installed through the bundled Python instead of as a binary.
+    pub async fn latest_ytdlp_version(&self, channel: Channel) -> Result<Version, String> {
+        let releases = self.releases(Self::ytdlp_repo(channel)).await?;
+        latest_release(&releases, channel)
+            .map(|r| r.version.clone())
+            .ok_or_else(|| "no yt-dlp release found".to_string())
+    }
+
+    /// Newest published version of Hyperbola itself.
+    pub async fn latest_app_version(&self) -> Result<Version, String> {
+        let releases = self.releases(APP_REPO).await?;
+        latest_release(&releases, Channel::Stable)
+            .map(|r| r.version.clone())
+            .ok_or_else(|| "no release found".to_string())
+    }
+
     /// Checks every component and returns one report for the update center.
     pub async fn check(&self, channel: Channel, app_version: &str) -> UpdateReport {
         let installed_ytdlp = self.ytdlp_version().await;
         let installed_ffmpeg = self.ffmpeg_version().await;
 
         // yt-dlp
-        let ytdlp_status = match self.releases(Self::ytdlp_repo(channel)).await {
-            Ok(releases) => {
-                let latest = latest_release(&releases, channel).map(|r| r.version.clone());
-                evaluate(Component::YtDlp, installed_ytdlp.clone(), latest, None)
-            }
+        let ytdlp_status = match self.latest_ytdlp_version(channel).await {
+            Ok(latest) => evaluate(Component::YtDlp, installed_ytdlp.clone(), Some(latest), None),
             Err(reason) => evaluate(Component::YtDlp, installed_ytdlp.clone(), None, Some(reason)),
         };
 
@@ -186,11 +201,8 @@ impl Dependencies {
         };
 
         // Hyperbola itself
-        let app_status = match self.releases(APP_REPO).await {
-            Ok(releases) => {
-                let latest = latest_release(&releases, Channel::Stable).map(|r| r.version.clone());
-                evaluate(Component::App, Some(Version::parse(app_version)), latest, None)
-            }
+        let app_status = match self.latest_app_version().await {
+            Ok(latest) => evaluate(Component::App, Some(Version::parse(app_version)), Some(latest), None),
             Err(reason) => evaluate(
                 Component::App,
                 Some(Version::parse(app_version)),

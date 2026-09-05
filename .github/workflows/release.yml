@@ -30,3 +30,43 @@ jobs:
           releaseName: Hyperbola ${{ github.ref_name }}
           releaseDraft: true
           args: --bundles nsis
+
+  android:
+    name: android apk
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: android-actions/setup-android@v3
+      - name: install ndk
+        run: |
+          sdkmanager "ndk;27.2.12479018" "platforms;android-35" "build-tools;35.0.0"
+          echo "NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+      - uses: Swatinem/rust-cache@v2
+      - run: npm ci
+      - run: npm --prefix ui ci
+      - run: npx tauri android init --ci
+      - run: node scripts/android-prepare.mjs
+      # Debug signing keeps the APK installable without publishing a keystore.
+      # A release keystore replaces this once the app is worth signing for real.
+      - run: npx tauri android build --debug --apk
+      - name: collect apk
+        run: |
+          mkdir -p dist
+          find src-tauri/gen/android -name "*.apk" -exec cp {} dist/ \;
+          ls -la dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hyperbola-android-apk
+          path: dist/*.apk
