@@ -153,22 +153,21 @@ impl Runner {
         }
 
         let status = child.wait().await.map_err(|e| e.to_string())?;
-        // With errors ignored so a postprocessor cannot discard a finished
-        // file, the exit code alone can no longer be trusted: the proof of a
-        // download is a file on disk.
+        // The proof of a download is the file, not the exit code.
+        //
+        // Postprocessing errors are ignored so a cosmetic step cannot discard
+        // a finished file — but yt-dlp still exits non-zero after one. Calling
+        // that a failure would throw away a file the user can already play,
+        // and would hide it behind an error they cannot act on.
         let produced_file = destination.is_some();
-        if !status.success() && error.is_none() {
-            error = Some(format!("yt-dlp exited with {status}"));
+        if !produced_file && error.is_none() {
+            error = Some(if status.success() {
+                "yt-dlp finished without writing a file".to_string()
+            } else {
+                format!("yt-dlp exited with {status}")
+            });
         }
-        if status.success() && !produced_file && error.is_none() {
-            error = Some("yt-dlp finished without writing a file".to_string());
-        }
-        Ok(Outcome {
-            success: status.success() && produced_file,
-            destination,
-            error,
-            canceled: false,
-        })
+        Ok(Outcome { success: produced_file, destination, error, canceled: false })
     }
 }
 

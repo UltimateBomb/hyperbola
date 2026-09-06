@@ -78,6 +78,13 @@ class YtdlpPlugin(private val activity: Activity) : Plugin(activity) {
     private val output = ConcurrentHashMap<String, ConcurrentLinkedQueue<String>>()
     private val finished = ConcurrentHashMap<String, Boolean>()
 
+    /**
+     * The last lines of each run, kept even though polling drains the queue.
+     * Without them a failure has nothing to say for itself: the engine
+     * library throws with an empty message when yt-dlp exits non-zero.
+     */
+    private val tails = ConcurrentHashMap<String, ArrayDeque<String>>()
+
     /** Completed once the engine has unpacked itself, successfully or not. */
     private val started = CompletableDeferred<Unit>()
 
@@ -146,7 +153,9 @@ class YtdlpPlugin(private val activity: Activity) : Plugin(activity) {
     fun download(invoke: Invoke) {
         val args = invoke.parseArgs(DownloadArgs::class.java)
         val lines = ConcurrentLinkedQueue<String>()
+        val tail = ArrayDeque<String>()
         output[args.id] = lines
+        tails[args.id] = tail
         finished[args.id] = false
         scope.launch {
             if (!awaitEngine(invoke)) {
@@ -158,6 +167,10 @@ class YtdlpPlugin(private val activity: Activity) : Plugin(activity) {
                 val response = YoutubeDL.getInstance()
                     .execute(request(args.url, args.args), args.id, true) { _, _, line ->
                         lines.add(line)
+                        synchronized(tail) {
+                            tail.addLast(line)
+                            while (tail.size > 80) tail.removeFirst()
+                        }
                     }
                 val result = JSObject()
                 result.put("exitCode", response.exitCode)
@@ -167,7 +180,19 @@ class YtdlpPlugin(private val activity: Activity) : Plugin(activity) {
                 result.put("stderr", details.takeLast(4000))
                 invoke.resolve(result)
             } catch (e: Exception) {
-                invoke.reject(describe(e, "the download failed"))
+                // The library throws whenever yt-dlp exits non-zero, which it
+                // does after an ignored postprocessing error — with the
+                // finished file already on disk. Report the exit instead of
+                // failing the call, and let the caller judge by the file.
+                if (e.javaClass.simpleName == "CanceledException") {
+                    invoke.reject("cancelled")
+                } else {
+                    val result = JSObject()
+                    result.put("exitCode", 1)
+                    val collected = synchronized(tail) { tail.joinToString("\n") }
+                    result.put("stderr", describe(e, "the download failed") + "\n" + collected)
+                    invoke.resolve(result)
+                }
             } finally {
                 finished[args.id] = true
             }
@@ -190,6 +215,7 @@ class YtdlpPlugin(private val activity: Activity) : Plugin(activity) {
         if (done && (queue?.isEmpty() != false)) {
             output.remove(args.id)
             finished.remove(args.id)
+            tails.remove(args.id)
         }
         val result = JSObject()
         result.put("lines", collected)

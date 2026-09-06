@@ -228,17 +228,17 @@ pub async fn run(
                 destination,
                 response.stderr.len()
             );
-            if response.exit_code == 0 && destination.is_some() {
+            // The file is the proof, not the exit code: the engine exits
+            // non-zero after an ignored postprocessing error, with the
+            // finished file already written.
+            if destination.is_some() {
+                if response.exit_code != 0 {
+                    log::warn!(
+                        "download {id} finished with code {} but produced a file",
+                        response.exit_code
+                    );
+                }
                 None
-            } else if response.exit_code == 0 {
-                // Errors are ignored during postprocessing so a cosmetic step
-                // cannot discard a finished file — which means a zero exit
-                // with no file is a failure, not a success.
-                Some(hyperbola_runner::describe_failure(
-                    last_error.clone(),
-                    None,
-                    &response.stderr,
-                ))
             } else {
                 Some(hyperbola_runner::describe_failure(
                     last_error.clone(),
