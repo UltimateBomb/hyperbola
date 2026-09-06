@@ -93,6 +93,9 @@ pub struct PublishRequest {
 pub struct PublishResult {
     /// Where the file ended up, as shown to the user.
     pub display_path: String,
+    /// The `content://` uri other apps can read — what "open" and "send"
+    /// need, since a path into the app's own directory means nothing to them.
+    pub uri: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -108,4 +111,10 @@ pub struct EnginePaths {
 pub struct ServiceRequest {
     /// What the notification says while downloads run.
     pub text: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileRequest {
+    pub uri: String,
 }

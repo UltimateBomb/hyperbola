@@ -31,6 +31,9 @@ pub struct Settings {
     /// Install dependency updates without asking. The app itself always asks.
     pub auto_install_dependency_updates: bool,
     pub watch_clipboard: bool,
+    /// Prefer H.264 and AAC, which play on any phone, over AV1 and Opus,
+    /// which are smaller and do not.
+    pub prefer_compatible: bool,
     /// Android only: the folder the user granted access to, as a SAF tree
     /// URI. Finished files are moved there; without it they go to Downloads.
     pub android_tree_uri: Option<String>,
@@ -59,6 +62,7 @@ impl Default for Settings {
             auto_check_updates: true,
             auto_install_dependency_updates: true,
             watch_clipboard: true,
+            prefer_compatible: true,
             android_tree_uri: None,
         }
     }

@@ -69,6 +69,32 @@ impl<R: Runtime> Ytdlp<R> {
             .map_err(Into::into)
     }
 
+    /// Opens a finished file in whatever app can play it.
+    pub fn open_file(&self, uri: &str) -> Result<()> {
+        self.0
+            .run_mobile_plugin::<serde_json::Value>(
+                "openFile",
+                FileRequest {
+                    uri: uri.to_string(),
+                },
+            )
+            .map(|_| ())
+            .map_err(Into::into)
+    }
+
+    /// Hands the file to the system share sheet, where Bluetooth lives.
+    pub fn share_file(&self, uri: &str) -> Result<()> {
+        self.0
+            .run_mobile_plugin::<serde_json::Value>(
+                "shareFile",
+                FileRequest {
+                    uri: uri.to_string(),
+                },
+            )
+            .map(|_| ())
+            .map_err(Into::into)
+    }
+
     pub fn cancel(&self, id: &str) -> Result<()> {
         self.0
             .run_mobile_plugin::<serde_json::Value>("cancel", ProcessId { id: id.to_string() })

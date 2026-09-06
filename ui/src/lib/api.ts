@@ -112,6 +112,7 @@ export interface Settings {
   auto_check_updates: boolean;
   auto_install_dependency_updates: boolean;
   watch_clipboard: boolean;
+  prefer_compatible: boolean;
 }
 
 export type UpdateState =
@@ -165,6 +166,8 @@ export const api = {
   appVersion: () => invoke<string>("app_version"),
   platform: () => invoke<string>("app_platform"),
   pickOutputFolder: () => invoke<string | null>("pick_output_folder"),
+  openDownload: (id: number) => invoke<void>("open_download", { id }),
+  shareDownload: (id: number) => invoke<void>("share_download", { id }),
 };
 
 export function humanBytes(bytes: number | null | undefined): string {

@@ -42,6 +42,10 @@ pub struct AppState {
     pub last_save: Mutex<Instant>,
     /// Android only: whether the foreground service is currently up.
     pub service_active: Mutex<bool>,
+    /// Recently read media info, so asking about the same link twice is
+    /// instant. Reading a YouTube link takes about ten seconds on a phone —
+    /// that is the site's extraction, not ours, but paying it twice is ours.
+    pub probes: Mutex<HashMap<String, (Instant, MediaProbe)>>,
 }
 
 /// What the window renders: the queue and its totals in one payload, so the
@@ -94,6 +98,7 @@ impl AddRequest {
             speed_limit: settings.speed_limit_bps(),
             cookies: settings.cookies.clone(),
             proxy: settings.proxy.clone(),
+            prefer_compatible: settings.prefer_compatible,
             extra_args: Vec::new(),
         };
         (options, title)
@@ -230,9 +235,30 @@ fn signal_cancel(app: &AppHandle, id: DownloadId) {
     }
 }
 
+/// How long a read stays fresh enough to reuse.
+const PROBE_CACHE: Duration = Duration::from_secs(600);
+
 #[tauri::command]
 async fn probe_url(app: AppHandle, url: String) -> Result<MediaProbe, String> {
-    runner::probe(&app, url.trim()).await
+    let url = url.trim().to_string();
+    {
+        let state = app.state::<AppState>();
+        let mut probes = state.probes.lock().unwrap();
+        probes.retain(|_, (at, _)| at.elapsed() < PROBE_CACHE);
+        if let Some((_, probe)) = probes.get(&url) {
+            return Ok(probe.clone());
+        }
+    }
+    let probe = runner::probe(&app, &url).await?;
+    {
+        let state = app.state::<AppState>();
+        state
+            .probes
+            .lock()
+            .unwrap()
+            .insert(url, (Instant::now(), probe.clone()));
+    }
+    Ok(probe)
 }
 
 #[tauri::command]
@@ -446,13 +472,25 @@ async fn build_report(app: &AppHandle) -> UpdateReport {
             (Some(installed), Err(reason)) => {
                 evaluate(Component::YtDlp, Some(installed), None, Some(reason))
             }
-            (None, _) => ComponentStatus {
+            // The library only remembers a version after it has updated
+            // itself once, so a fresh install reports nothing — and the app
+            // then showed "unknown" with no button, leaving the user stuck on
+            // a year-old extractor that every site rejects. The engine is
+            // there and can always be refreshed: offer that.
+            (None, Ok(latest)) => ComponentStatus {
+                component: Component::YtDlp,
+                installed: None,
+                latest: Some(latest.clone()),
+                state: UpdateState::UpdateAvailable {
+                    from: Version::parse("built-in"),
+                    to: latest,
+                },
+            },
+            (None, Err(reason)) => ComponentStatus {
                 component: Component::YtDlp,
                 installed: None,
                 latest: None,
-                state: UpdateState::Unknown {
-                    reason: "the engine did not report its version".to_string(),
-                },
+                state: UpdateState::Unknown { reason },
             },
         };
 
@@ -600,6 +638,71 @@ async fn install_app_update(
     Ok(installer.display().to_string())
 }
 
+/// Opens a finished download in whatever app can play it.
+#[tauri::command]
+async fn open_download(app: AppHandle, id: DownloadId) -> Result<(), String> {
+    let (path, uri) = {
+        let state = app.state::<AppState>();
+        let queue = state.queue.lock().unwrap();
+        let download = queue.get(id).ok_or("that download is gone")?;
+        let path = match &download.state {
+            hyperbola_core::domain::DownloadState::Completed { path } => path.clone(),
+            _ => return Err("that download did not finish".to_string()),
+        };
+        (path, download.metadata.get("uri").cloned())
+    };
+
+    #[cfg(target_os = "android")]
+    {
+        use tauri_plugin_ytdlp::YtdlpExt;
+        let uri = uri.ok_or("the system did not give this file a handle")?;
+        let handle = app.clone();
+        return tauri::async_runtime::spawn_blocking(move || handle.ytdlp().open_file(&uri))
+            .await
+            .map_err(|e| e.to_string())?
+            .map_err(|e| e.to_string());
+    }
+
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = uri;
+        use tauri_plugin_opener::OpenerExt;
+        app.opener()
+            .open_path(path.display().to_string(), None::<&str>)
+            .map_err(|e| e.to_string())
+    }
+}
+
+/// Hands a finished download to the system share sheet — Bluetooth, Nearby
+/// Share and every messenger are behind that one button on a phone.
+#[tauri::command]
+async fn share_download(app: AppHandle, id: DownloadId) -> Result<(), String> {
+    let uri = {
+        let state = app.state::<AppState>();
+        let queue = state.queue.lock().unwrap();
+        queue
+            .get(id)
+            .and_then(|d| d.metadata.get("uri").cloned())
+            .ok_or("that file cannot be shared")?
+    };
+
+    #[cfg(target_os = "android")]
+    {
+        use tauri_plugin_ytdlp::YtdlpExt;
+        let handle = app.clone();
+        return tauri::async_runtime::spawn_blocking(move || handle.ytdlp().share_file(&uri))
+            .await
+            .map_err(|e| e.to_string())?
+            .map_err(|e| e.to_string());
+    }
+
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = (uri, &app);
+        Err("sending a file to another device is a phone feature".to_string())
+    }
+}
+
 #[tauri::command]
 fn app_version() -> &'static str {
     env!("CARGO_PKG_VERSION")
@@ -698,6 +801,7 @@ pub fn run() {
                 temp_dir,
                 last_save: Mutex::new(Instant::now()),
                 service_active: Mutex::new(false),
+                probes: Mutex::new(HashMap::new()),
             });
 
             // Android: find out where the bundled ffmpeg is before anything
@@ -791,6 +895,8 @@ pub fn run() {
             app_version,
             app_platform,
             pick_output_folder,
+            open_download,
+            share_download,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Hyperbola");

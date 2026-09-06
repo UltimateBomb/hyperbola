@@ -12,7 +12,9 @@
   } from "./lib/api";
 
   let url = $state("");
+  let kind: "video" | "audio" = $state("video");
   let probing = $state(false);
+  let slow = $state(false);
   let probe: MediaProbe | null = $state(null);
   let error: string | null = $state(null);
   let snapshot: Snapshot = $state({
@@ -80,11 +82,16 @@
     probing = true;
     error = null;
     probe = null;
+    // Reading a YouTube link takes about ten seconds on a phone — the site's
+    // extraction, not ours. Saying so beats a button that looks stuck.
+    const hint = setTimeout(() => (slow = true), 2500);
     try {
       probe = await api.probe(trimmed);
     } catch (e) {
       error = String(e);
     } finally {
+      clearTimeout(hint);
+      slow = false;
       probing = false;
     }
   }
@@ -127,10 +134,18 @@
       bind:value={url}
       onkeydown={(e) => e.key === "Enter" && analyze()}
     />
+    <div class="kind">
+      <button class:on={kind === "video"} onclick={() => (kind = "video")}>Video + sound</button>
+      <button class:on={kind === "audio"} onclick={() => (kind = "audio")}>Sound only</button>
+    </div>
     <button class="primary" onclick={() => analyze()} disabled={probing || !url.trim()}>
       {probing ? "Reading…" : "Analyze"}
     </button>
   </section>
+
+  {#if probing && slow}
+    <p class="muted small hint">Reading the page. Some sites take several seconds.</p>
+  {/if}
 
   {#if clipboardSuggestion}
     <p class="suggestion">
@@ -143,7 +158,7 @@
   {#if error}<p class="pill err wide">{error}</p>{/if}
 
   {#if probe}
-    <ProbePanel {probe} onqueued={queued} />
+    <ProbePanel {probe} {kind} onqueued={queued} />
   {/if}
 
   <section class="queue-head">
@@ -161,7 +176,7 @@
     </button>
   </section>
 
-  <Queue {snapshot} />
+  <Queue {snapshot} {platform} />
 </main>
 
 {#if panel !== "none"}
@@ -210,9 +225,18 @@
     background: #201a08; border: 1px solid #4a3a12; color: var(--warn);
     display: flex; align-items: center; gap: 10px;
   }
-  .add { display: flex; gap: 10px; }
-  .add input { flex: 1; }
-  .add button { flex: none; }
+  .add { display: flex; gap: 10px; flex-wrap: wrap; }
+  .add input { flex: 1 1 100%; }
+  .add > button { flex: none; }
+  .kind { display: flex; flex: 1; }
+  .kind button {
+    flex: 1;
+    border-radius: var(--radius) 0 0 var(--radius);
+    white-space: nowrap;
+  }
+  .kind button:last-child { border-radius: 0 var(--radius) var(--radius) 0; border-left: none; }
+  .kind button.on { background: #24325e; border-color: #3a4b80; color: #fff; }
+  .hint { margin: -8px 0 0; }
   .suggestion {
     margin: -6px 0 0; font-size: 13px; color: var(--muted);
     display: flex; align-items: center; gap: 8px; flex-wrap: wrap;

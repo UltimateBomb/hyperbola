@@ -177,13 +177,33 @@ pub fn format_selector(options: &DownloadOptions) -> String {
         };
     }
     match options.kind {
-        MediaKind::Audio => "bestaudio/best".to_string(),
-        MediaKind::Video => match options.max_height {
-            Some(h) => format!(
-                "bestvideo[height<={h}]+bestaudio/best[height<={h}]/bestvideo+bestaudio/best"
-            ),
-            None => "bestvideo+bestaudio/best".to_string(),
-        },
+        MediaKind::Audio => {
+            if options.prefer_compatible {
+                // AAC before Opus: every player understands it.
+                "bestaudio[acodec^=mp4a]/bestaudio/best".to_string()
+            } else {
+                "bestaudio/best".to_string()
+            }
+        }
+        MediaKind::Video => {
+            let cap = options
+                .max_height
+                .map(|h| format!("[height<={h}]"))
+                .unwrap_or_default();
+            if options.prefer_compatible {
+                // H.264 and AAC first, then anything: a file that will not
+                // play on the user's own phone is not a successful download.
+                format!(
+                    "bestvideo[vcodec^=avc1]{cap}+bestaudio[acodec^=mp4a]/\
+                     bestvideo[vcodec^=avc1]{cap}+bestaudio/\
+                     best[vcodec^=avc1]{cap}/\
+                     bestvideo{cap}+bestaudio/best{cap}/best"
+                )
+                .replace(' ', "")
+            } else {
+                format!("bestvideo{cap}+bestaudio/best{cap}/bestvideo+bestaudio/best")
+            }
+        }
     }
 }
 
@@ -262,10 +282,32 @@ mod tests {
     #[test]
     fn video_selector_respects_a_height_cap() {
         let mut options = DownloadOptions::video("u", "/out");
+        options.prefer_compatible = false;
         options.max_height = Some(1080);
         assert_eq!(
             format_selector(&options),
             "bestvideo[height<=1080]+bestaudio/best[height<=1080]/bestvideo+bestaudio/best"
+        );
+    }
+
+    #[test]
+    fn playable_codecs_come_first_by_default() {
+        let mut options = DownloadOptions::video("u", "/out");
+        options.max_height = Some(720);
+        let selector = format_selector(&options);
+        // H.264 and AAC lead, and the height cap applies to every branch.
+        assert!(
+            selector.starts_with("bestvideo[vcodec^=avc1][height<=720]+bestaudio[acodec^=mp4a]")
+        );
+        assert!(selector.ends_with("/best"));
+        assert_eq!(selector.matches("[height<=720]").count(), 5);
+        assert!(!selector.contains(' '));
+
+        // Audio keeps the same rule: AAC before Opus.
+        let audio = DownloadOptions::audio("u", "/out");
+        assert_eq!(
+            format_selector(&audio),
+            "bestaudio[acodec^=mp4a]/bestaudio/best"
         );
     }
 

@@ -274,6 +274,13 @@ pub struct DownloadOptions {
     pub speed_limit: Option<u64>,
     pub cookies: CookieSource,
     pub proxy: Option<String>,
+    /// Prefer H.264 video and AAC audio over newer, smaller codecs.
+    ///
+    /// YouTube now offers AV1 and Opus as "best", and phones more than a few
+    /// years old cannot decode either — the file downloads perfectly and then
+    /// will not play. A file that plays everywhere is worth more than a
+    /// slightly smaller one that does not.
+    pub prefer_compatible: bool,
     /// Extra raw yt-dlp arguments, for users who know what they want.
     pub extra_args: Vec<String>,
 }
@@ -299,6 +306,7 @@ impl DownloadOptions {
             speed_limit: None,
             cookies: CookieSource::None,
             proxy: None,
+            prefer_compatible: true,
             extra_args: Vec::new(),
         }
     }

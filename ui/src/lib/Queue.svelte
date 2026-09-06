@@ -1,8 +1,31 @@
 <script lang="ts">
-  import { revealItemInDir, openPath } from "@tauri-apps/plugin-opener";
+  import { revealItemInDir } from "@tauri-apps/plugin-opener";
   import { api, humanBytes, humanDuration, type Download, type Snapshot } from "./api";
 
-  let { snapshot }: { snapshot: Snapshot } = $props();
+  let { snapshot, platform = "" }: { snapshot: Snapshot; platform?: string } = $props();
+
+  let problems: Record<number, string> = $state({});
+
+  // Opening and sending go through the shell: on a phone a finished file is
+  // reached by the handle the system gave it, not by a path other apps
+  // cannot read.
+  async function open(id: number) {
+    try {
+      await api.openDownload(id);
+      const { [id]: _gone, ...rest } = problems;
+      problems = rest;
+    } catch (e) {
+      problems = { ...problems, [id]: String(e) };
+    }
+  }
+
+  async function share(id: number) {
+    try {
+      await api.shareDownload(id);
+    } catch (e) {
+      problems = { ...problems, [id]: String(e) };
+    }
+  }
 
   function fraction(d: Download): number | null {
     const s = d.state;
@@ -50,6 +73,10 @@
         <div class="fill" style={f !== null ? `width:${(f * 100).toFixed(1)}%` : ""}></div>
       </div>
 
+      {#if problems[item.id]}
+        <div class="problem">{problems[item.id]}</div>
+      {/if}
+
       <div class="foot">
         <span class="detail mono" title={line(item)}>{line(item)}</span>
         <span class="actions">
@@ -63,8 +90,12 @@
             <button class="icon ghost" onclick={() => api.retry(item.id)} title="Try again">↻</button>
           {/if}
           {#if item.state.state === "completed"}
-            <button class="icon ghost" onclick={() => openPath(item.state.path)} title="Open">▶</button>
-            <button class="icon ghost" onclick={() => revealItemInDir(item.state.path)} title="Show in folder">📁</button>
+            <button class="icon ghost" onclick={() => open(item.id)} title="Play">▶</button>
+            {#if platform === "android"}
+              <button class="icon ghost" onclick={() => share(item.id)} title="Send to another device">⤴</button>
+            {:else}
+              <button class="icon ghost" onclick={() => revealItemInDir(item.state.path)} title="Show in folder">📁</button>
+            {/if}
           {/if}
           {#if item.state.state === "running" || item.state.state === "queued" || item.state.state === "paused"}
             <button class="icon ghost danger" onclick={() => api.cancel(item.id)} title="Cancel">✕</button>
@@ -113,4 +144,5 @@
   .detail { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .actions { display: flex; gap: 4px; flex: none; }
   .empty { text-align: center; padding: 28px 0; }
+  .problem { color: var(--err); font-size: 12px; margin-bottom: 6px; }
 </style>

@@ -65,6 +65,12 @@ class ServiceArgs {
 }
 
 @InvokeArg
+class FileArgs {
+    /** content:// uri of a finished download. */
+    lateinit var uri: String
+}
+
+@InvokeArg
 class PublishArgs {
     lateinit var sourcePath: String
     var treeUri: String? = null
@@ -262,6 +268,59 @@ class YtdlpPlugin(private val activity: Activity) : Plugin(activity) {
         invoke.resolve(JSObject())
     }
 
+    /**
+     * Opens a finished file in whatever app can play it.
+     *
+     * A path is useless here: other apps cannot read the app's private
+     * directory, and the public folder is reached through a content uri, not
+     * a filename. Handing over the uri with read permission is the only way.
+     */
+    @Command
+    fun openFile(invoke: Invoke) {
+        val args = invoke.parseArgs(FileArgs::class.java)
+        val uri = Uri.parse(args.uri)
+        val intent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, mimeTypeOf(nameOf(uri) ?: ""))
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        try {
+            activity.startActivity(intent)
+            invoke.resolve(JSObject())
+        } catch (e: Exception) {
+            invoke.reject(describe(e, "nothing on this phone can open that file"))
+        }
+    }
+
+    /**
+     * Hands the file to the system share sheet — which is where Bluetooth,
+     * Nearby Share and every messenger live. Sending over Bluetooth directly
+     * would be a worse version of a thing the phone already does well.
+     */
+    @Command
+    fun shareFile(invoke: Invoke) {
+        val args = invoke.parseArgs(FileArgs::class.java)
+        val uri = Uri.parse(args.uri)
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = mimeTypeOf(nameOf(uri) ?: "")
+            putExtra(Intent.EXTRA_STREAM, uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        try {
+            activity.startActivity(
+                Intent.createChooser(intent, "Send file")
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            )
+            invoke.resolve(JSObject())
+        } catch (e: Exception) {
+            invoke.reject(describe(e, "could not open the share sheet"))
+        }
+    }
+
+    private fun nameOf(uri: Uri): String? = runCatching {
+        activity.contentResolver.query(uri, arrayOf(MediaStore.Downloads.DISPLAY_NAME), null, null, null)
+            ?.use { if (it.moveToFirst()) it.getString(0) else null }
+    }.getOrNull()
+
     @Command
     fun cancel(invoke: Invoke) {
         val args = invoke.parseArgs(ProcessArgs::class.java)
@@ -407,11 +466,12 @@ class YtdlpPlugin(private val activity: Activity) : Plugin(activity) {
                     invoke.reject("finished file not found: ${args.sourcePath}")
                     return@launch
                 }
-                val display = args.treeUri?.let { copyIntoTree(source, Uri.parse(it)) }
+                val saved = args.treeUri?.let { copyIntoTree(source, Uri.parse(it)) }
                     ?: copyIntoDownloads(source)
                 source.delete()
                 val result = JSObject()
-                result.put("displayPath", display)
+                result.put("displayPath", saved.displayPath)
+                result.put("uri", saved.uri)
                 invoke.resolve(result)
             } catch (e: Exception) {
                 invoke.reject(describe(e, "could not save the file"))
@@ -419,7 +479,10 @@ class YtdlpPlugin(private val activity: Activity) : Plugin(activity) {
         }
     }
 
-    private fun copyIntoTree(source: File, treeUri: Uri): String {
+    /** Where a finished file ended up: what to show, and what to open. */
+    private class Saved(val displayPath: String, val uri: String)
+
+    private fun copyIntoTree(source: File, treeUri: Uri): Saved {
         val tree = DocumentFile.fromTreeUri(activity, treeUri)
             ?: throw IllegalStateException("the chosen folder is no longer available")
         // Never delete what is already there: a download must not be able to
@@ -436,10 +499,10 @@ class YtdlpPlugin(private val activity: Activity) : Plugin(activity) {
             requireNotNull(out) { "could not open the target file" }
             source.inputStream().use { it.copyTo(out) }
         }
-        return "${tree.name ?: "folder"}/$name"
+        return Saved("${tree.name ?: "folder"}/$name", target.uri.toString())
     }
 
-    private fun copyIntoDownloads(source: File): String {
+    private fun copyIntoDownloads(source: File): Saved {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             val resolver = activity.contentResolver
             var lastError: Exception? = null
@@ -467,7 +530,7 @@ class YtdlpPlugin(private val activity: Activity) : Plugin(activity) {
                     // Android renames a colliding file itself, so the name it
                     // actually used is the only one worth reporting: the app
                     // was telling the user about a file that was not there.
-                    return "Downloads/${actualName(uri) ?: name}"
+                    return Saved("Downloads/${actualName(uri) ?: name}", uri.toString())
                 } catch (e: Exception) {
                     lastError = e
                     if (attempt == 0) {
@@ -492,7 +555,7 @@ class YtdlpPlugin(private val activity: Activity) : Plugin(activity) {
             attempt += 1
         }
         source.inputStream().use { input -> target.outputStream().use { input.copyTo(it) } }
-        return target.absolutePath
+        return Saved(target.absolutePath, Uri.fromFile(target).toString())
     }
 
     /** The display name the media store settled on, which may not be ours. */

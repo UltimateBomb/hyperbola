@@ -4,9 +4,13 @@
     type AddRequest, type MediaKind, type MediaProbe,
   } from "./api";
 
-  let { probe, onqueued }: { probe: MediaProbe; onqueued: () => void } = $props();
+  let {
+    probe,
+    kind: initialKind = "video",
+    onqueued,
+  }: { probe: MediaProbe; kind?: MediaKind; onqueued: () => void } = $props();
 
-  let kind: MediaKind = $state("video");
+  let kind: MediaKind = $state(initialKind);
   let maxHeight: number | null = $state(null);
   let subtitles: string[] = $state([]);
   let selected: Set<string> = $state(new Set(probe.items.map((i) => i.id)));
@@ -89,8 +93,8 @@
     <div class="control">
       <span class="label muted">Type</span>
       <div class="segmented">
-        <button class:on={kind === "video"} onclick={() => (kind = "video")}>Video</button>
-        <button class:on={kind === "audio"} onclick={() => (kind = "audio")}>Audio</button>
+        <button class:on={kind === "video"} onclick={() => (kind = "video")}>Video + sound</button>
+        <button class:on={kind === "audio"} onclick={() => (kind = "audio")}>Sound only</button>
       </div>
     </div>
 

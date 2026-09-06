@@ -88,7 +88,9 @@ impl Queue {
         self.items.iter().find(|d| d.id == id)
     }
 
-    fn get_mut(&mut self, id: DownloadId) -> Option<&mut Download> {
+    /// Mutable access for the shell to attach what only it knows — the
+    /// system's own handle for a finished file, for instance.
+    pub fn get_mut(&mut self, id: DownloadId) -> Option<&mut Download> {
         self.items.iter_mut().find(|d| d.id == id)
     }
 
