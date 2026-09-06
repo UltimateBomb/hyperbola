@@ -97,6 +97,18 @@ Two things that are deliberately not done:
   architectures, forever. The failure would land on a user's video, not in
   CI.
 
+## What the app does with a finished file
+
+- **Play** hands the system the handle it gave the file. A path would not do:
+  other apps cannot read the app's own directory at all.
+- **Send** opens the system share sheet, where Bluetooth, Nearby Share and
+  every messenger already live. A Bluetooth button of our own would be a
+  worse version of something the phone does well.
+- Downloads default to **H.264 video and AAC audio**. YouTube offers AV1 and
+  Opus as "best", and a phone more than a few years old decodes neither — the
+  file arrives perfectly and will not play. Settings has a switch for anyone
+  who wants the newer, smaller codecs.
+
 ## Known limits
 
 - Downloads stop when Android kills the app; a foreground service to hold them
