@@ -464,7 +464,10 @@ class YtdlpPlugin(private val activity: Activity) : Plugin(activity) {
                     values.clear()
                     values.put(MediaStore.Downloads.IS_PENDING, 0)
                     resolver.update(uri, values, null, null)
-                    return "Downloads/$name"
+                    // Android renames a colliding file itself, so the name it
+                    // actually used is the only one worth reporting: the app
+                    // was telling the user about a file that was not there.
+                    return "Downloads/${actualName(uri) ?: name}"
                 } catch (e: Exception) {
                     lastError = e
                     if (attempt == 0) {
@@ -491,6 +494,19 @@ class YtdlpPlugin(private val activity: Activity) : Plugin(activity) {
         source.inputStream().use { input -> target.outputStream().use { input.copyTo(it) } }
         return target.absolutePath
     }
+
+    /** The display name the media store settled on, which may not be ours. */
+    private fun actualName(uri: Uri): String? = runCatching {
+        activity.contentResolver.query(
+            uri,
+            arrayOf(MediaStore.Downloads.DISPLAY_NAME),
+            null,
+            null,
+            null,
+        )?.use { cursor ->
+            if (cursor.moveToFirst()) cursor.getString(0) else null
+        }
+    }.getOrNull()
 
     /** `clip.mp4` -> `clip (1).mp4` */
     private fun numbered(name: String, index: Int): String {
