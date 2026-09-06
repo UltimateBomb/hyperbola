@@ -25,6 +25,7 @@
     $state(null);
   let panel: "none" | "updates" | "settings" = $state("none");
   let version = $state("");
+  let platform = $state("");
   let clipboardSuggestion: string | null = $state(null);
   let lastClipboard = "";
 
@@ -41,6 +42,7 @@
     snapshot = await api.snapshot();
     settings = await api.getSettings();
     version = await api.appVersion();
+    platform = await api.platform().catch(() => "");
 
     await listen<Snapshot>("queue-changed", (event) => (snapshot = event.payload));
     await listen<UpdateReport>("updates-changed", (event) => (updates = event.payload));
@@ -55,6 +57,11 @@
 
   async function pollClipboard() {
     if (!settings?.watch_clipboard) return;
+    // Android refuses clipboard reads to anything not in focus, and asking
+    // every second only fills the system log with denials. Sharing a link to
+    // the app is the platform's own answer to this.
+    if (platform === "android") return;
+    if (typeof document !== "undefined" && !document.hasFocus()) return;
     try {
       const text = (await readText())?.trim() ?? "";
       if (!text || text === lastClipboard) return;
@@ -173,7 +180,22 @@
 {/if}
 
 <style>
-  main { max-width: 900px; margin: 0 auto; padding: 22px 24px 60px; display: flex; flex-direction: column; gap: 16px; }
+  main {
+    max-width: 900px;
+    margin: 0 auto;
+    /* Phones put a status bar over the top of the page. */
+    padding: calc(22px + env(safe-area-inset-top)) 24px calc(60px + env(safe-area-inset-bottom));
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  @media (max-width: 640px) {
+    main { padding-left: 14px; padding-right: 14px; gap: 12px; }
+    .add { flex-direction: column; }
+    .add button { width: 100%; }
+    .top-actions { gap: 6px; }
+  }
   .top { display: flex; justify-content: space-between; align-items: center; }
   .brand { display: flex; align-items: baseline; gap: 10px; }
   .mark {

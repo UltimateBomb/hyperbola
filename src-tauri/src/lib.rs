@@ -315,17 +315,82 @@ fn dependency_paths(app: AppHandle) -> DependencyPaths {
 
 #[tauri::command]
 async fn check_updates(app: AppHandle) -> UpdateReport {
+    let report = build_report(&app).await;
+    let _ = app.emit("updates-changed", report.clone());
+    report
+}
+
+/// The update picture for this platform.
+///
+/// The desktop keeps its own binaries and knows their versions from disk.
+/// Android has no binaries to keep: yt-dlp, Python and ffmpeg are inside the
+/// APK, so the engine reports its own version and updates itself in place.
+/// The release feed is the same in both cases — it is the same yt-dlp.
+async fn build_report(app: &AppHandle) -> UpdateReport {
     let channel = {
         let state = app.state::<AppState>();
         let settings = state.settings.lock().unwrap();
         settings.ytdlp_channel
     };
-    let report = {
+
+    #[cfg(not(target_os = "android"))]
+    {
         let state = app.state::<AppState>();
         state.deps.check(channel, env!("CARGO_PKG_VERSION")).await
-    };
-    let _ = app.emit("updates-changed", report.clone());
-    report
+    }
+
+    #[cfg(target_os = "android")]
+    {
+        use hyperbola_core::updates::{evaluate, ComponentStatus, UpdateState};
+        use hyperbola_core::version::Version;
+        use tauri_plugin_ytdlp::YtdlpExt;
+
+        let handle = app.clone();
+        let installed = tauri::async_runtime::spawn_blocking(move || handle.ytdlp().engine_version())
+            .await
+            .ok()
+            .and_then(|result| result.ok())
+            .and_then(|v| v.version)
+            .map(|v| Version::parse(&v));
+
+        let latest = {
+            let state = app.state::<AppState>();
+            state.deps.latest_ytdlp_version(channel).await
+        };
+        let ytdlp = match latest {
+            Ok(latest) => evaluate(Component::YtDlp, installed, Some(latest), None),
+            Err(reason) => evaluate(Component::YtDlp, installed, None, Some(reason)),
+        };
+
+        // ffmpeg ships inside the APK and moves with the app, so there is
+        // nothing here for the user to install or keep current.
+        let ffmpeg = ComponentStatus {
+            component: Component::FFmpeg,
+            installed: Some(Version::parse("bundled")),
+            latest: None,
+            state: UpdateState::UpToDate,
+        };
+
+        let app_status = {
+            let state = app.state::<AppState>();
+            match state.deps.latest_app_version().await {
+                Ok(latest) => evaluate(
+                    Component::App,
+                    Some(Version::parse(env!("CARGO_PKG_VERSION"))),
+                    Some(latest),
+                    None,
+                ),
+                Err(reason) => evaluate(
+                    Component::App,
+                    Some(Version::parse(env!("CARGO_PKG_VERSION"))),
+                    None,
+                    Some(reason),
+                ),
+            }
+        };
+
+        UpdateReport::new(vec![ytdlp, ffmpeg, app_status])
+    }
 }
 
 /// A dependency that could not be installed, pushed to the window so a
@@ -361,10 +426,35 @@ async fn install_update(app: AppHandle, component: Component) -> Result<String, 
     if component == Component::App {
         return install_app_update(app, &progress).await;
     }
+
+    #[cfg(target_os = "android")]
+    {
+        use tauri_plugin_ytdlp::YtdlpExt;
+        if component == Component::FFmpeg {
+            return Err("ffmpeg is part of the app on Android and updates with it".to_string());
+        }
+        let channel_name = match channel {
+            hyperbola_core::updates::Channel::Nightly => "nightly",
+            hyperbola_core::updates::Channel::Stable => "stable",
+        };
+        let handle = app.clone();
+        let result = tauri::async_runtime::spawn_blocking(move || {
+            handle.ytdlp().update_engine(channel_name)
+        })
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())?;
+        log::info!("engine update: {} {:?}", result.status, result.version);
+        let _ = check_updates(app).await;
+        return Ok(result.version.unwrap_or(result.status));
+    }
+
+    #[cfg(not(target_os = "android"))]
     let installed = {
         let state = app.state::<AppState>();
         state.deps.install(component, channel, &progress).await
     };
+    #[cfg(not(target_os = "android"))]
     let version = match installed {
         Ok(version) => version,
         Err(message) => {
@@ -506,22 +596,18 @@ pub fn run() {
             // missing before the user hits a confusing failure.
             let startup = handle.clone();
             tauri::async_runtime::spawn(async move {
-                let (auto_check, auto_install, channel) = {
+                let (auto_check, auto_install) = {
                     let state = startup.state::<AppState>();
                     let settings = state.settings.lock().unwrap();
                     (
                         settings.auto_check_updates,
                         settings.auto_install_dependency_updates,
-                        settings.ytdlp_channel,
                     )
                 };
                 if !auto_check {
                     return;
                 }
-                let report = {
-                    let state = startup.state::<AppState>();
-                    state.deps.check(channel, env!("CARGO_PKG_VERSION")).await
-                };
+                let report = build_report(&startup).await;
                 log::info!("update check: {}", report.summary());
                 let _ = startup.emit("updates-changed", report.clone());
                 if !auto_install {
