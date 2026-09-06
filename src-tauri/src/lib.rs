@@ -453,25 +453,26 @@ async fn install_update(app: AppHandle, component: Component) -> Result<String, 
     }
 
     #[cfg(not(target_os = "android"))]
-    let installed = {
-        let state = app.state::<AppState>();
-        state.deps.install(component, channel, &progress).await
-    };
-    #[cfg(not(target_os = "android"))]
-    let version = match installed {
-        Ok(version) => version,
-        Err(message) => {
-            log::error!("installing {} failed: {message}", component.display_name());
-            let _ = app.emit(
-                "dependency-error",
-                DependencyError { component, message: message.clone() },
-            );
-            return Err(message);
-        }
-    };
-    log::info!("installed {} {version}", component.display_name());
-    let _ = check_updates(app).await;
-    Ok(version.as_str().to_string())
+    {
+        let installed = {
+            let state = app.state::<AppState>();
+            state.deps.install(component, channel, &progress).await
+        };
+        let version = match installed {
+            Ok(version) => version,
+            Err(message) => {
+                log::error!("installing {} failed: {message}", component.display_name());
+                let _ = app.emit(
+                    "dependency-error",
+                    DependencyError { component, message: message.clone() },
+                );
+                return Err(message);
+            }
+        };
+        log::info!("installed {} {version}", component.display_name());
+        let _ = check_updates(app).await;
+        Ok(version.as_str().to_string())
+    }
 }
 
 /// Updating the app itself is not a file swap: the running program cannot
