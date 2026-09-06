@@ -77,17 +77,39 @@ jobs:
       - run: npm --prefix ui ci
       - run: npx tauri android init --ci
       - run: node scripts/android-prepare.mjs
-      # Debug signing keeps the APK installable without publishing a keystore.
-      # A release keystore replaces this once the app is worth signing for real.
-      #
       # One APK per ABI: the engine carries a Python runtime and ffmpeg for
       # every architecture, so a universal build is around 400 MB while a
       # single-architecture one is a quarter of that.
-      - run: npx tauri android build --debug --apk --split-per-abi
+      #
+      # Release, not debug: the debug library alone was 178 MB of unoptimised
+      # code and symbols — several times the engine it carries.
+      - run: npx tauri android build --apk --split-per-abi
+      # A release APK is unsigned, and an unsigned APK cannot be installed.
+      # This key is generated per run and is not a release identity: it makes
+      # the build installable, nothing more. A stored key replaces it when
+      # there is one, and then updates will install over each other.
+      - name: sign
+        run: |
+          set -eu
+          keytool -genkeypair -v -keystore build.jks -alias hyperbola \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -storepass hyperbola -keypass hyperbola -dname "CN=Hyperbola build"
+          tools="$ANDROID_HOME/build-tools/35.0.0"
+          mkdir -p dist
+          for apk in $(find src-tauri/gen/android -name "*-unsigned.apk"); do
+            aligned="dist/$(basename "${apk%-unsigned.apk}").apk"
+            "$tools/zipalign" -p -f 4 "$apk" "$aligned"
+            "$tools/apksigner" sign --ks build.jks --ks-pass pass:hyperbola \
+              --key-pass pass:hyperbola "$aligned"
+            "$tools/apksigner" verify "$aligned"
+          done
+          rm -f build.jks dist/*.idsig
+          ls -la dist
       - name: collect apk
         run: |
           mkdir -p dist
-          find src-tauri/gen/android -name "*.apk" -exec cp {} dist/ \;
+          # Anything the signing step did not already place there.
+          find src-tauri/gen/android -name "*.apk" ! -name "*-unsigned.apk" -exec cp -n {} dist/ \;
           ls -la dist
       - uses: actions/upload-artifact@v4
         with:
