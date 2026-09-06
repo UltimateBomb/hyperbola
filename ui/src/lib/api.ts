@@ -168,6 +168,7 @@ export const api = {
   pickOutputFolder: () => invoke<string | null>("pick_output_folder"),
   openDownload: (id: number) => invoke<void>("open_download", { id }),
   shareDownload: (id: number) => invoke<void>("share_download", { id }),
+  failureAdvice: (message: string) => invoke<string | null>("failure_advice", { message }),
 };
 
 export function humanBytes(bytes: number | null | undefined): string {

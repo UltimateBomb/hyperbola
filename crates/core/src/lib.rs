@@ -8,6 +8,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod advice;
 pub mod args;
 pub mod domain;
 pub mod probe;
@@ -17,6 +18,7 @@ pub mod retry;
 pub mod updates;
 pub mod version;
 
+pub use advice::advice_for;
 pub use args::{build_download_args, build_probe_args, RunnerEnv};
 pub use domain::{
     Container, CookieSource, Download, DownloadId, DownloadOptions, DownloadState, Format,

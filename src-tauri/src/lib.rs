@@ -703,6 +703,12 @@ async fn share_download(app: AppHandle, id: DownloadId) -> Result<(), String> {
     }
 }
 
+/// A sentence of advice for a failure, when there is one worth giving.
+#[tauri::command]
+fn failure_advice(message: String) -> Option<&'static str> {
+    hyperbola_core::advice::advice_for(&message)
+}
+
 #[tauri::command]
 fn app_version() -> &'static str {
     env!("CARGO_PKG_VERSION")
@@ -897,6 +903,7 @@ pub fn run() {
             pick_output_folder,
             open_download,
             share_download,
+            failure_advice,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Hyperbola");

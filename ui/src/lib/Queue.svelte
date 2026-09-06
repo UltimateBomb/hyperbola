@@ -5,6 +5,19 @@
   let { snapshot, platform = "" }: { snapshot: Snapshot; platform?: string } = $props();
 
   let problems: Record<number, string> = $state({});
+  let advice: Record<number, string> = $state({});
+
+  // A failure the user can do nothing with is half a failure. The engine's
+  // own words stay; the sentence next to them says what to try.
+  $effect(() => {
+    for (const item of snapshot.items) {
+      if (item.state.state !== "failed" || advice[item.id] !== undefined) continue;
+      const message = item.state.message;
+      api.failureAdvice(message).then((hint) => {
+        if (hint) advice = { ...advice, [item.id]: hint };
+      }).catch(() => {});
+    }
+  });
 
   // Opening and sending go through the shell: on a phone a finished file is
   // reached by the handle the system gave it, not by a path other apps
@@ -72,6 +85,10 @@
       <div class="bar" class:indeterminate={item.state.state === "running" && f === null}>
         <div class="fill" style={f !== null ? `width:${(f * 100).toFixed(1)}%` : ""}></div>
       </div>
+
+      {#if item.state.state === "failed" && advice[item.id]}
+        <div class="advice">{advice[item.id]}</div>
+      {/if}
 
       {#if problems[item.id]}
         <div class="problem">{problems[item.id]}</div>
@@ -145,4 +162,5 @@
   .actions { display: flex; gap: 4px; flex: none; }
   .empty { text-align: center; padding: 28px 0; }
   .problem { color: var(--err); font-size: 12px; margin-bottom: 6px; }
+  .advice { color: var(--warn); font-size: 12px; margin: 4px 0 2px; }
 </style>
