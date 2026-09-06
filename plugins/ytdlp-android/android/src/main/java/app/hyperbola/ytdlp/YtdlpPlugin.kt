@@ -422,40 +422,84 @@ class YtdlpPlugin(private val activity: Activity) : Plugin(activity) {
     private fun copyIntoTree(source: File, treeUri: Uri): String {
         val tree = DocumentFile.fromTreeUri(activity, treeUri)
             ?: throw IllegalStateException("the chosen folder is no longer available")
-        tree.findFile(source.name)?.delete()
-        val target = tree.createFile(mimeTypeOf(source.name), source.name)
+        // Never delete what is already there: a download must not be able to
+        // overwrite a file the user put in that folder themselves.
+        var name = source.name
+        var attempt = 1
+        while (tree.findFile(name) != null && attempt < 100) {
+            name = numbered(source.name, attempt)
+            attempt += 1
+        }
+        val target = tree.createFile(mimeTypeOf(name), name)
             ?: throw IllegalStateException("could not create the file in the chosen folder")
         activity.contentResolver.openOutputStream(target.uri).use { out ->
             requireNotNull(out) { "could not open the target file" }
             source.inputStream().use { it.copyTo(out) }
         }
-        return "${tree.name ?: "folder"}/${source.name}"
+        return "${tree.name ?: "folder"}/$name"
     }
 
     private fun copyIntoDownloads(source: File): String {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            val values = ContentValues().apply {
-                put(MediaStore.Downloads.DISPLAY_NAME, source.name)
-                put(MediaStore.Downloads.MIME_TYPE, mimeTypeOf(source.name))
-                put(MediaStore.Downloads.IS_PENDING, 1)
-            }
             val resolver = activity.contentResolver
-            val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
-                ?: throw IllegalStateException("could not add the file to Downloads")
-            resolver.openOutputStream(uri).use { out ->
-                requireNotNull(out) { "could not open the target file" }
-                source.inputStream().use { it.copyTo(out) }
+            var lastError: Exception? = null
+            // The media database can hold a row for a file that no longer
+            // exists, and inserting the same name then fails with a unique
+            // constraint. Clear that stale row once, then fall back to
+            // numbering rather than overwriting anything.
+            for (attempt in 0..20) {
+                val name = if (attempt == 0) source.name else numbered(source.name, attempt)
+                val values = ContentValues().apply {
+                    put(MediaStore.Downloads.DISPLAY_NAME, name)
+                    put(MediaStore.Downloads.MIME_TYPE, mimeTypeOf(name))
+                    put(MediaStore.Downloads.IS_PENDING, 1)
+                }
+                try {
+                    val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                        ?: throw IllegalStateException("could not add the file to Downloads")
+                    resolver.openOutputStream(uri).use { out ->
+                        requireNotNull(out) { "could not open the target file" }
+                        source.inputStream().use { it.copyTo(out) }
+                    }
+                    values.clear()
+                    values.put(MediaStore.Downloads.IS_PENDING, 0)
+                    resolver.update(uri, values, null, null)
+                    return "Downloads/$name"
+                } catch (e: Exception) {
+                    lastError = e
+                    if (attempt == 0) {
+                        runCatching {
+                            resolver.delete(
+                                MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                                "${MediaStore.Downloads.DISPLAY_NAME} = ?",
+                                arrayOf(name),
+                            )
+                        }
+                    }
+                }
             }
-            values.clear()
-            values.put(MediaStore.Downloads.IS_PENDING, 0)
-            resolver.update(uri, values, null, null)
-            return "Downloads/${source.name}"
+            throw lastError ?: IllegalStateException("could not save into Downloads")
         }
         val downloads = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
         downloads.mkdirs()
-        val target = File(downloads, source.name)
+        var target = File(downloads, source.name)
+        var attempt = 1
+        while (target.exists() && attempt < 100) {
+            target = File(downloads, numbered(source.name, attempt))
+            attempt += 1
+        }
         source.inputStream().use { input -> target.outputStream().use { input.copyTo(it) } }
         return target.absolutePath
+    }
+
+    /** `clip.mp4` -> `clip (1).mp4` */
+    private fun numbered(name: String, index: Int): String {
+        val dot = name.lastIndexOf('.')
+        return if (dot > 0) {
+            "${name.substring(0, dot)} ($index)${name.substring(dot)}"
+        } else {
+            "$name ($index)"
+        }
     }
 
     private fun mimeTypeOf(name: String): String = when (name.substringAfterLast('.', "").lowercase()) {
