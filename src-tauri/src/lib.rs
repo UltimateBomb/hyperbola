@@ -40,6 +40,8 @@ pub struct AppState {
     pub engine_ffmpeg_dir: Mutex<Option<PathBuf>>,
     /// Last time the queue was written; progress alone must not hammer the disk.
     pub last_save: Mutex<Instant>,
+    /// Android only: whether the foreground service is currently up.
+    pub service_active: Mutex<bool>,
 }
 
 /// What the window renders: the queue and its totals in one payload, so the
@@ -123,7 +125,52 @@ pub fn emit_queue(app: &AppHandle) {
     if due {
         write_queue(&state.queue_path, &snapshot.items);
     }
+    #[cfg(target_os = "android")]
+    sync_download_service(app, &snapshot.stats);
     let _ = app.emit("queue-changed", snapshot);
+}
+
+/// Holds the phone awake exactly as long as there is work.
+///
+/// Android stops an app's work within seconds of the screen going off, which
+/// is fatal for a download measured in minutes. The service runs while the
+/// queue has something in it and is torn down the moment it does not, so the
+/// notification never outlives the work it explains.
+#[cfg(target_os = "android")]
+fn sync_download_service(app: &AppHandle, stats: &QueueStats) {
+    use tauri_plugin_ytdlp::YtdlpExt;
+
+    let wanted = stats.running > 0 || stats.queued > 0;
+    let changed = {
+        let state = app.state::<AppState>();
+        let mut active = state.service_active.lock().unwrap();
+        if *active == wanted {
+            false
+        } else {
+            *active = wanted;
+            true
+        }
+    };
+    if !changed {
+        return;
+    }
+    let pending = stats.running + stats.queued;
+    let text = if pending > 1 {
+        format!("{pending} downloads in progress")
+    } else {
+        "Downloading".to_string()
+    };
+    let handle = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let result = if wanted {
+            handle.ytdlp().start_service(&text)
+        } else {
+            handle.ytdlp().stop_service()
+        };
+        if let Err(e) = result {
+            log::warn!("download service: {e}");
+        }
+    });
 }
 
 /// Writes the queue immediately, for changes worth not losing: a download
@@ -650,6 +697,7 @@ pub fn run() {
                 engine_ffmpeg_dir: Mutex::new(None),
                 temp_dir,
                 last_save: Mutex::new(Instant::now()),
+                service_active: Mutex::new(false),
             });
 
             // Android: find out where the bundled ffmpeg is before anything

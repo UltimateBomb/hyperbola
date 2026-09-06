@@ -102,3 +102,10 @@ pub struct EnginePaths {
     /// for, or `null` when they could not be made reachable.
     pub ffmpeg_dir: Option<String>,
 }
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ServiceRequest {
+    /// What the notification says while downloads run.
+    pub text: String,
+}

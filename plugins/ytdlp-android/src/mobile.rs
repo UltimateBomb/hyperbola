@@ -49,6 +49,26 @@ impl<R: Runtime> Ytdlp<R> {
             .map_err(Into::into)
     }
 
+    /// Keeps downloads running while the phone sleeps.
+    pub fn start_service(&self, text: &str) -> Result<()> {
+        self.0
+            .run_mobile_plugin::<serde_json::Value>(
+                "startDownloadService",
+                ServiceRequest {
+                    text: text.to_string(),
+                },
+            )
+            .map(|_| ())
+            .map_err(Into::into)
+    }
+
+    pub fn stop_service(&self) -> Result<()> {
+        self.0
+            .run_mobile_plugin::<serde_json::Value>("stopDownloadService", ())
+            .map(|_| ())
+            .map_err(Into::into)
+    }
+
     pub fn cancel(&self, id: &str) -> Result<()> {
         self.0
             .run_mobile_plugin::<serde_json::Value>("cancel", ProcessId { id: id.to_string() })

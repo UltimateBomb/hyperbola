@@ -4,12 +4,16 @@ import android.app.Activity
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import android.system.Os
 import android.content.ContentValues
 import android.webkit.WebView
 import androidx.activity.result.ActivityResult
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
+import android.content.pm.PackageManager
 import androidx.documentfile.provider.DocumentFile
 import app.tauri.annotation.Command
 import app.tauri.annotation.InvokeArg
@@ -54,6 +58,11 @@ class ProcessArgs {
 @InvokeArg
 class UpdateArgs {
     var channel: String = "stable"
+}
+
+@InvokeArg
+class ServiceArgs {
+    var text: String = "Downloading"
 }
 
 @InvokeArg
@@ -223,6 +232,37 @@ class YtdlpPlugin(private val activity: Activity) : Plugin(activity) {
         invoke.resolve(result)
     }
 
+    /**
+     * Starts the foreground service that keeps downloads alive while the
+     * screen is off, and asks for the notification permission the first time
+     * — without it the work still runs but the user cannot see or stop it.
+     */
+    @Command
+    fun startDownloadService(invoke: Invoke) {
+        val args = invoke.parseArgs(ServiceArgs::class.java)
+        if (Build.VERSION.SDK_INT >= 33) {
+            val granted = ContextCompat.checkSelfPermission(
+                activity,
+                "android.permission.POST_NOTIFICATIONS",
+            ) == PackageManager.PERMISSION_GRANTED
+            if (!granted) {
+                ActivityCompat.requestPermissions(
+                    activity,
+                    arrayOf("android.permission.POST_NOTIFICATIONS"),
+                    REQUEST_NOTIFICATIONS,
+                )
+            }
+        }
+        DownloadService.start(activity, args.text)
+        invoke.resolve(JSObject())
+    }
+
+    @Command
+    fun stopDownloadService(invoke: Invoke) {
+        DownloadService.stop(activity)
+        invoke.resolve(JSObject())
+    }
+
     @Command
     fun cancel(invoke: Invoke) {
         val args = invoke.parseArgs(ProcessArgs::class.java)
@@ -263,6 +303,10 @@ class YtdlpPlugin(private val activity: Activity) : Plugin(activity) {
      * empty rejection reached the user as a failed download with nothing
      * written next to it.
      */
+    private companion object {
+        const val REQUEST_NOTIFICATIONS = 4711
+    }
+
     private fun describe(e: Exception, fallback: String): String {
         val own = e.message?.trim().orEmpty()
         if (own.isNotEmpty()) return own
