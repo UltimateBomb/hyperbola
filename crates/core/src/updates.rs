@@ -151,13 +151,25 @@ impl UpdateReport {
     }
 
     /// One line for the UI badge.
+    ///
+    /// A check that failed must not read as health: "everything is up to
+    /// date" is only true when everything was actually checked.
     pub fn summary(&self) -> String {
         let actionable = self.actionable();
-        if actionable.is_empty() {
-            return "Everything is up to date".to_string();
+        if !actionable.is_empty() {
+            let names: Vec<&str> = actionable.iter().map(|c| c.component.display_name()).collect();
+            return format!("Update available: {}", names.join(", "));
         }
-        let names: Vec<&str> = actionable.iter().map(|c| c.component.display_name()).collect();
-        format!("Update available: {}", names.join(", "))
+        let unchecked: Vec<&str> = self
+            .components
+            .iter()
+            .filter(|c| matches!(c.state, UpdateState::Unknown { .. }))
+            .map(|c| c.component.display_name())
+            .collect();
+        if !unchecked.is_empty() {
+            return format!("Could not check: {}", unchecked.join(", "));
+        }
+        "Everything is up to date".to_string()
     }
 }
 
@@ -352,6 +364,16 @@ mod tests {
             None,
         )]);
         assert!(missing_ytdlp.is_blocked());
+    }
+
+    #[test]
+    fn a_failed_check_does_not_read_as_health() {
+        let report = UpdateReport::new(vec![
+            evaluate(Component::YtDlp, Some(v("2026.03.17")), Some(v("2026.03.17")), None),
+            evaluate(Component::App, Some(v("0.1.0")), None, Some("offline".into())),
+        ]);
+        assert!(!report.has_updates());
+        assert_eq!(report.summary(), "Could not check: Hyperbola");
     }
 
     #[test]

@@ -19,12 +19,16 @@ Early. The engine is written and tested; the shells are being built.
 | `hyperbola-runner` + CLI harness | real downloads verified on macOS and Windows |
 | Windows app | installs, runs, and fetches yt-dlp and ffmpeg by itself on a clean machine |
 | Update centre | app, yt-dlp and ffmpeg in one list; failures shown, not swallowed |
-| Android app | APK builds with the engine inside; **not yet run on a device** |
+| Android app | verified on a phone: engine runs, updates itself, downloads land in Downloads |
 | CI | Windows installer and one APK per ABI on every run |
 
 Verified end to end on Windows: a fresh install downloaded yt-dlp (17 MB) and
 ffmpeg (170 MB archive) unattended, and the same engine then pulled a 59 MB
 video down to the exact path it reported.
+
+Verified end to end on Android (Galaxy S7 edge, LineageOS 20): the engine
+unpacked from the APK, updated its own yt-dlp from 2025.11.12 to 2026.08.19,
+and a 332 MB download finished in the phone's Downloads folder.
 
 ## Building
 
