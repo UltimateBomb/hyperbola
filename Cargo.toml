@@ -18,7 +18,9 @@ thiserror = "2"
 # an unoptimised build with full symbols came to 178 MB on its own.
 [profile.release]
 opt-level = "s"
-lto = true
-codegen-units = 1
+# Thin, not fat: fat LTO with a single codegen unit doubled the build time of
+# four Android targets to save a few hundred kilobytes.
+lto = "thin"
+codegen-units = 4
 panic = "abort"
 strip = "symbols"
