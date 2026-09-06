@@ -221,20 +221,38 @@ pub async fn run(
     }
 
     let failed = match outcome {
-        Ok(Ok(response)) if response.exit_code == 0 && destination.is_some() => None,
-        Ok(Ok(response)) if response.exit_code == 0 => Some(
-            last_error
-                .clone()
-                .unwrap_or_else(|| "the engine finished without writing a file".to_string()),
-        ),
-        Ok(Ok(response)) => Some(
-            last_error
-                .clone()
-                .or_else(|| response.stderr.lines().last().map(str::to_string))
-                .unwrap_or_else(|| format!("the engine exited with {}", response.exit_code)),
-        ),
-        Ok(Err(e)) => Some(e.to_string()),
-        Err(e) => Some(e.to_string()),
+        Ok(Ok(response)) => {
+            log::info!(
+                "download {id}: exit {}, file {:?}, {} bytes of output",
+                response.exit_code,
+                destination,
+                response.stderr.len()
+            );
+            if response.exit_code == 0 && destination.is_some() {
+                None
+            } else if response.exit_code == 0 {
+                // Errors are ignored during postprocessing so a cosmetic step
+                // cannot discard a finished file — which means a zero exit
+                // with no file is a failure, not a success.
+                Some(hyperbola_runner::describe_failure(
+                    last_error.clone(),
+                    None,
+                    &response.stderr,
+                ))
+            } else {
+                Some(hyperbola_runner::describe_failure(
+                    last_error.clone(),
+                    Some(response.exit_code),
+                    &response.stderr,
+                ))
+            }
+        }
+        Ok(Err(e)) => Some(hyperbola_runner::describe_failure(
+            Some(e.to_string()),
+            None,
+            "",
+        )),
+        Err(e) => Some(hyperbola_runner::describe_failure(Some(e.to_string()), None, "")),
     };
 
     if let Some(message) = failed {
@@ -247,6 +265,7 @@ pub async fn run(
     // yt-dlp can only write inside the app's own directory; hand the finished
     // file to the folder the user picked, or to Downloads.
     let Some(source) = destination else {
+        log::error!("download {id} produced no file path to publish");
         finish_failed(
             &app,
             id,
@@ -265,6 +284,7 @@ pub async fn run(
     })
     .await;
 
+    log::info!("download {id}: publishing {}", source.display());
     match published {
         Ok(Ok(result)) => {
             let state = app.state::<AppState>();

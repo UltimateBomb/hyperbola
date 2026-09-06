@@ -182,6 +182,30 @@ fn record(event: &Event, destination: &mut Option<PathBuf>, error: &mut Option<S
     }
 }
 
+/// Turns a possibly-blank failure into something a person can act on.
+///
+/// A failure that reaches the user as an empty string is worse than a wrong
+/// guess: there is nothing to search for, nothing to report, and no way to
+/// tell a network blip from a dead link.
+pub fn describe_failure(message: Option<String>, exit_code: Option<i32>, tail: &str) -> String {
+    if let Some(message) = message.map(|m| m.trim().to_string()).filter(|m| !m.is_empty()) {
+        return message;
+    }
+    let last_line = tail
+        .lines()
+        .rev()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .unwrap_or("");
+    if !last_line.is_empty() {
+        return last_line.to_string();
+    }
+    match exit_code {
+        Some(code) => format!("the download engine stopped with code {code}"),
+        None => "the download engine stopped without saying why".to_string(),
+    }
+}
+
 fn last_error_line(stderr: &str) -> String {
     stderr
         .lines()
@@ -196,6 +220,25 @@ fn last_error_line(stderr: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_failure_is_never_reported_as_an_empty_string() {
+        assert_eq!(describe_failure(Some("boom".into()), Some(1), ""), "boom");
+        // An empty message with output behind it: the output is the message.
+        assert_eq!(
+            describe_failure(Some("  ".into()), Some(1), "line one\nline two\n"),
+            "line two"
+        );
+        // Nothing at all still says something.
+        assert_eq!(
+            describe_failure(None, Some(2), ""),
+            "the download engine stopped with code 2"
+        );
+        assert_eq!(
+            describe_failure(None, None, ""),
+            "the download engine stopped without saying why"
+        );
+    }
 
     #[test]
     fn the_last_error_line_wins() {

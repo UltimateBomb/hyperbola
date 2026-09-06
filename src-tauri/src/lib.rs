@@ -309,6 +309,24 @@ struct DependencyPaths {
 #[tauri::command]
 fn dependency_paths(app: AppHandle) -> DependencyPaths {
     let state = app.state::<AppState>();
+
+    #[cfg(target_os = "android")]
+    {
+        // Nothing is installed on disk here: the engine is part of the app.
+        DependencyPaths {
+            ytdlp: Some("bundled in the app".to_string()),
+            ffmpeg: state
+                .engine_ffmpeg_dir
+                .lock()
+                .unwrap()
+                .clone()
+                .map(|dir| format!("bundled in the app ({})", dir.display()))
+                .or_else(|| Some("bundled in the app".to_string())),
+            bin_dir: state.staging_dir.display().to_string(),
+        }
+    }
+
+    #[cfg(not(target_os = "android"))]
     DependencyPaths {
         ytdlp: state.deps.ytdlp_path().map(|p| p.display().to_string()),
         ffmpeg: state.deps.ffmpeg_path().map(|p| p.display().to_string()),
@@ -360,9 +378,25 @@ async fn build_report(app: &AppHandle) -> UpdateReport {
             let state = app.state::<AppState>();
             state.deps.latest_ytdlp_version(channel).await
         };
-        let ytdlp = match latest {
-            Ok(latest) => evaluate(Component::YtDlp, installed, Some(latest), None),
-            Err(reason) => evaluate(Component::YtDlp, installed, None, Some(reason)),
+        // The engine ships inside the APK, so it is never missing. When its
+        // version cannot be read — the library forgets it after a failed
+        // update — say that, rather than telling the user on a phone that
+        // yt-dlp is not installed and nothing can download.
+        let ytdlp = match (installed, latest) {
+            (Some(installed), Ok(latest)) => {
+                evaluate(Component::YtDlp, Some(installed), Some(latest), None)
+            }
+            (Some(installed), Err(reason)) => {
+                evaluate(Component::YtDlp, Some(installed), None, Some(reason))
+            }
+            (None, _) => ComponentStatus {
+                component: Component::YtDlp,
+                installed: None,
+                latest: None,
+                state: UpdateState::Unknown {
+                    reason: "the engine did not report its version".to_string(),
+                },
+            },
         };
 
         // ffmpeg ships inside the APK and moves with the app, so there is
@@ -648,7 +682,17 @@ pub fn run() {
                     }
                     let component = status.component;
                     log::info!("installing {} automatically", component.display_name());
-                    if let Err(message) = install_update(startup.clone(), component).await {
+                    let mut outcome = install_update(startup.clone(), component).await;
+                    if outcome.is_err() {
+                        // The first attempt right after launch competes with
+                        // everything else a cold start is doing; one retry
+                        // turns most of these into a success the user never
+                        // has to notice.
+                        log::warn!("retrying {} once", component.display_name());
+                        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                        outcome = install_update(startup.clone(), component).await;
+                    }
+                    if let Err(message) = outcome {
                         // Silence here used to mean the user saw a working app
                         // that could not merge a file, with nothing to read.
                         log::error!("could not install {}: {message}", component.display_name());

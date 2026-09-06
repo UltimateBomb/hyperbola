@@ -224,7 +224,11 @@
   .drawer {
     position: fixed; top: 0; right: 0; bottom: 0; width: min(560px, 92vw);
     background: var(--bg-soft); border-left: 1px solid var(--border);
-    padding: 22px; overflow-y: auto; box-shadow: -20px 0 60px rgba(0, 0, 0, 0.45);
+    padding: calc(14px + env(safe-area-inset-top)) 18px calc(22px + env(safe-area-inset-bottom));
+    overflow-y: auto; box-shadow: -20px 0 60px rgba(0, 0, 0, 0.45);
+    display: flex; flex-direction: column; gap: 12px;
   }
-  .close { position: absolute; top: 14px; right: 16px; }
+  /* Its own row: overlapping the panel header made the button unreachable on
+     a phone, where the header fills the width. */
+  .close { align-self: flex-end; }
 </style>

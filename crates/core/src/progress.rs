@@ -71,7 +71,10 @@ pub fn parse_line(line: &str) -> Option<Event> {
         return parse_progress(rest);
     }
     if let Some(rest) = trimmed.strip_prefix("ERROR:") {
-        return Some(Event::Error(rest.trim().to_string()));
+        // A bare "ERROR:" carries no information, and letting it through
+        // replaces a real message with an empty one.
+        let message = rest.trim();
+        return (!message.is_empty()).then(|| Event::Error(message.to_string()));
     }
     if let Some(rest) = trimmed.strip_prefix("WARNING:") {
         return Some(Event::Warning(rest.trim().to_string()));
@@ -242,6 +245,16 @@ mod tests {
         assert_eq!(
             parse_line("WARNING: Falling back to generic extractor").unwrap(),
             Event::Warning("Falling back to generic extractor".to_string())
+        );
+    }
+
+    #[test]
+    fn a_bare_error_line_carries_nothing_and_is_ignored() {
+        assert_eq!(parse_line("ERROR:"), None);
+        assert_eq!(parse_line("ERROR:   "), None);
+        assert_eq!(
+            parse_line("ERROR: real problem").unwrap(),
+            Event::Error("real problem".to_string())
         );
     }
 

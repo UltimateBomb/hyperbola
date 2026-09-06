@@ -137,7 +137,7 @@ class YtdlpPlugin(private val activity: Activity) : Plugin(activity) {
                 result.put("json", response.out)
                 invoke.resolve(result)
             } catch (e: Exception) {
-                invoke.reject(e.message ?: "could not read media info")
+                invoke.reject(describe(e, "could not read media info"))
             }
         }
     }
@@ -167,7 +167,7 @@ class YtdlpPlugin(private val activity: Activity) : Plugin(activity) {
                 result.put("stderr", details.takeLast(4000))
                 invoke.resolve(result)
             } catch (e: Exception) {
-                invoke.reject(e.message ?: "download failed")
+                invoke.reject(describe(e, "the download failed"))
             } finally {
                 finished[args.id] = true
             }
@@ -230,6 +230,21 @@ class YtdlpPlugin(private val activity: Activity) : Plugin(activity) {
         invoke.resolve(result)
     }
 
+    /**
+     * A reason, always.
+     *
+     * The engine library throws exceptions whose message is empty, and an
+     * empty rejection reached the user as a failed download with nothing
+     * written next to it.
+     */
+    private fun describe(e: Exception, fallback: String): String {
+        val own = e.message?.trim().orEmpty()
+        if (own.isNotEmpty()) return own
+        val cause = e.cause?.message?.trim().orEmpty()
+        if (cause.isNotEmpty()) return "${e.javaClass.simpleName}: $cause"
+        return "$fallback (${e.javaClass.simpleName})"
+    }
+
     private fun link(target: File, linkFile: File) {
         if (!target.exists()) return
         linkFile.delete()
@@ -268,7 +283,7 @@ class YtdlpPlugin(private val activity: Activity) : Plugin(activity) {
                 result.put("version", YoutubeDL.getInstance().version(activity))
                 invoke.resolve(result)
             } catch (e: Exception) {
-                invoke.reject(e.message ?: "could not update the engine")
+                invoke.reject(describe(e, "could not update the engine"))
             }
         }
     }
@@ -330,7 +345,7 @@ class YtdlpPlugin(private val activity: Activity) : Plugin(activity) {
                 result.put("displayPath", display)
                 invoke.resolve(result)
             } catch (e: Exception) {
-                invoke.reject(e.message ?: "could not save the file")
+                invoke.reject(describe(e, "could not save the file"))
             }
         }
     }

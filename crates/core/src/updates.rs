@@ -26,6 +26,9 @@ pub enum Component {
     /// within days, when a site changes.
     YtDlp,
     /// Muxing, audio extraction and cutting.
+    // Without this the derived name is "f_fmpeg", which no caller expects and
+    // which left the component nameless in the update panel.
+    #[serde(rename = "ffmpeg")]
     FFmpeg,
 }
 
@@ -270,6 +273,17 @@ mod tests {
 
     fn v(s: &str) -> Version {
         Version::parse(s)
+    }
+
+    #[test]
+    fn components_serialise_under_the_names_the_ui_uses() {
+        assert_eq!(serde_json::to_string(&Component::FFmpeg).unwrap(), "\"ffmpeg\"");
+        assert_eq!(serde_json::to_string(&Component::YtDlp).unwrap(), "\"yt_dlp\"");
+        assert_eq!(serde_json::to_string(&Component::App).unwrap(), "\"app\"");
+        assert_eq!(
+            serde_json::from_str::<Component>("\"ffmpeg\"").unwrap(),
+            Component::FFmpeg
+        );
     }
 
     #[test]
