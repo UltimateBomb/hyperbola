@@ -153,10 +153,22 @@ impl Runner {
         }
 
         let status = child.wait().await.map_err(|e| e.to_string())?;
+        // With errors ignored so a postprocessor cannot discard a finished
+        // file, the exit code alone can no longer be trusted: the proof of a
+        // download is a file on disk.
+        let produced_file = destination.is_some();
         if !status.success() && error.is_none() {
             error = Some(format!("yt-dlp exited with {status}"));
         }
-        Ok(Outcome { success: status.success(), destination, error, canceled: false })
+        if status.success() && !produced_file && error.is_none() {
+            error = Some("yt-dlp finished without writing a file".to_string());
+        }
+        Ok(Outcome {
+            success: status.success() && produced_file,
+            destination,
+            error,
+            canceled: false,
+        })
     }
 }
 

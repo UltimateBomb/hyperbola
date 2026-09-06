@@ -35,6 +35,9 @@ pub struct AppState {
     /// Where downloads are written while they run. Android needs this to be
     /// app-private; the desktop writes straight into the user's folder.
     pub staging_dir: PathBuf,
+    /// Android only: directory where the bundled ffmpeg is reachable under
+    /// the name yt-dlp looks for. Empty until the engine reports it.
+    pub engine_ffmpeg_dir: Mutex<Option<PathBuf>>,
     /// Last time the queue was written; progress alone must not hammer the disk.
     pub last_save: Mutex<Instant>,
 }
@@ -588,9 +591,34 @@ pub fn run() {
                 config_path,
                 queue_path,
                 staging_dir,
+                engine_ffmpeg_dir: Mutex::new(None),
                 temp_dir,
                 last_save: Mutex::new(Instant::now()),
             });
+
+            // Android: find out where the bundled ffmpeg is before anything
+            // is queued, or the first merge fails after a full download.
+            #[cfg(target_os = "android")]
+            {
+                let handle = handle.clone();
+                tauri::async_runtime::spawn(async move {
+                    use tauri_plugin_ytdlp::YtdlpExt;
+                    let engine = handle.clone();
+                    let paths = tauri::async_runtime::spawn_blocking(move || engine.ytdlp().engine_paths())
+                        .await;
+                    match paths {
+                        Ok(Ok(paths)) => {
+                            log::info!("engine ffmpeg dir: {:?}", paths.ffmpeg_dir);
+                            if let Some(dir) = paths.ffmpeg_dir {
+                                let state = handle.state::<AppState>();
+                                *state.engine_ffmpeg_dir.lock().unwrap() = Some(PathBuf::from(dir));
+                            }
+                        }
+                        Ok(Err(e)) => log::error!("could not locate the bundled ffmpeg: {e}"),
+                        Err(e) => log::error!("could not locate the bundled ffmpeg: {e}"),
+                    }
+                });
+            }
 
             // First run, or a dependency the user deleted: fetch what is
             // missing before the user hits a confusing failure.

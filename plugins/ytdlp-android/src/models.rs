@@ -94,3 +94,11 @@ pub struct PublishResult {
     /// Where the file ended up, as shown to the user.
     pub display_path: String,
 }
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EnginePaths {
+    /// Directory holding `ffmpeg` and `ffprobe` under the names yt-dlp looks
+    /// for, or `null` when they could not be made reachable.
+    pub ffmpeg_dir: Option<String>,
+}

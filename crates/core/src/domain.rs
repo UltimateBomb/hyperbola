@@ -62,6 +62,23 @@ impl Container {
         }
     }
 
+    /// Whether yt-dlp can embed a cover image into this container.
+    ///
+    /// Asking it to embed into anything else fails the whole download at the
+    /// last step, after every byte has already been fetched — the list is
+    /// yt-dlp's own: mp3, mkv/mka, ogg/opus/flac, m4a/mp4/m4v/mov.
+    pub fn supports_embedded_thumbnail(self) -> bool {
+        matches!(
+            self,
+            Container::Mp4
+                | Container::Mkv
+                | Container::Mp3
+                | Container::M4a
+                | Container::Opus
+                | Container::Flac
+        )
+    }
+
     pub fn kind(self) -> MediaKind {
         match self {
             Container::Mp3 | Container::Opus | Container::Flac | Container::Wav | Container::M4a => {
@@ -468,6 +485,17 @@ mod tests {
         f.filesize_is_estimate = true;
         f.filesize = Some(10_000_000);
         assert!(f.label().contains("~9.5 MB"));
+    }
+
+    #[test]
+    fn only_containers_that_can_hold_a_cover_claim_to() {
+        assert!(Container::Mp4.supports_embedded_thumbnail());
+        assert!(Container::Mp3.supports_embedded_thumbnail());
+        assert!(!Container::Webm.supports_embedded_thumbnail());
+        assert!(!Container::Wav.supports_embedded_thumbnail());
+        // The source container is unknown until the file arrives, so nothing
+        // may be promised about it.
+        assert!(!Container::Source.supports_embedded_thumbnail());
     }
 
     #[test]

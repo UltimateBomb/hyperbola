@@ -221,7 +221,12 @@ pub async fn run(
     }
 
     let failed = match outcome {
-        Ok(Ok(response)) if response.exit_code == 0 => None,
+        Ok(Ok(response)) if response.exit_code == 0 && destination.is_some() => None,
+        Ok(Ok(response)) if response.exit_code == 0 => Some(
+            last_error
+                .clone()
+                .unwrap_or_else(|| "the engine finished without writing a file".to_string()),
+        ),
         Ok(Ok(response)) => Some(
             last_error
                 .clone()
@@ -338,10 +343,11 @@ impl AppState {
     pub fn runner_env(&self, settings: &crate::settings::Settings) -> RunnerEnv {
         RunnerEnv {
             temp_dir: self.temp_dir.clone(),
-            // On Android ffmpeg and the JS runtime come from the engine
-            // library itself; pointing yt-dlp at a path would break it.
+            // On Android ffmpeg lives in the native library directory under a
+            // name yt-dlp does not recognise; the engine reports a directory
+            // where it is reachable as plain `ffmpeg`.
             #[cfg(target_os = "android")]
-            ffmpeg_path: None,
+            ffmpeg_path: self.engine_ffmpeg_dir.lock().unwrap().clone(),
             #[cfg(not(target_os = "android"))]
             ffmpeg_path: self.deps.ffmpeg_path(),
             plugin_dir: None,

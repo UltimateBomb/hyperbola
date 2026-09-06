@@ -52,6 +52,11 @@ impl<R: Runtime> Ytdlp<R> {
             .map_err(Into::into)
     }
 
+    /// Where ffmpeg can be found under the name yt-dlp expects.
+    pub fn engine_paths(&self) -> Result<EnginePaths> {
+        self.0.run_mobile_plugin("enginePaths", ()).map_err(Into::into)
+    }
+
     pub fn engine_version(&self) -> Result<EngineVersion> {
         self.0
             .run_mobile_plugin("engineVersion", ())

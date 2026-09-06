@@ -6,6 +6,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
+import android.system.Os
 import android.content.ContentValues
 import android.webkit.WebView
 import androidx.activity.result.ActivityResult
@@ -139,7 +140,10 @@ class YtdlpPlugin(private val activity: Activity) : Plugin(activity) {
                     }
                 val result = JSObject()
                 result.put("exitCode", response.exitCode)
-                result.put("stderr", response.err)
+                // Errors are folded into the output stream, so a failure with
+                // an empty `err` would reach the user as a blank message.
+                val details = response.err.ifBlank { response.out }
+                result.put("stderr", details.takeLast(4000))
                 invoke.resolve(result)
             } catch (e: Exception) {
                 invoke.reject(e.message ?: "download failed")
@@ -178,6 +182,37 @@ class YtdlpPlugin(private val activity: Activity) : Plugin(activity) {
         YoutubeDL.getInstance().destroyProcessById(args.id)
         finished[args.id] = true
         invoke.resolve(JSObject())
+    }
+
+    /**
+     * Makes ffmpeg reachable by the name yt-dlp looks for.
+     *
+     * Android only executes code from the native library directory, where
+     * ffmpeg is installed as `libffmpeg.so`. yt-dlp searches for a file
+     * called `ffmpeg`, finds nothing, and fails at the merge step after the
+     * whole file has downloaded. Symlinks in the app's own directory give it
+     * the name it expects while the executable stays where Android allows it.
+     */
+    @Command
+    fun enginePaths(invoke: Invoke) {
+        val result = JSObject()
+        try {
+            val binDir = File(activity.filesDir, "engine-bin").apply { mkdirs() }
+            val nativeDir = File(activity.applicationInfo.nativeLibraryDir)
+            link(File(nativeDir, "libffmpeg.so"), File(binDir, "ffmpeg"))
+            link(File(nativeDir, "libffprobe.so"), File(binDir, "ffprobe"))
+            val ffmpeg = File(binDir, "ffmpeg")
+            result.put("ffmpegDir", if (ffmpeg.exists()) binDir.absolutePath else null)
+        } catch (e: Exception) {
+            result.put("ffmpegDir", null)
+        }
+        invoke.resolve(result)
+    }
+
+    private fun link(target: File, linkFile: File) {
+        if (!target.exists()) return
+        linkFile.delete()
+        Os.symlink(target.absolutePath, linkFile.absolutePath)
     }
 
     @Command

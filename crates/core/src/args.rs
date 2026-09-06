@@ -77,6 +77,10 @@ pub fn build_download_args(options: &DownloadOptions, env: &RunnerEnv) -> Vec<St
         // which is why --progress above is explicit.
         "--print".into(),
         FINAL_PATH_TEMPLATE.into(),
+        // A postprocessor that cannot do its job must not throw away a file
+        // that already downloaded. Success is judged by whether a file was
+        // produced, not by yt-dlp's exit code alone.
+        "--ignore-errors".into(),
         "--retries".into(),
         "3".into(),
         "--fragment-retries".into(),
@@ -130,7 +134,8 @@ pub fn build_download_args(options: &DownloadOptions, env: &RunnerEnv) -> Vec<St
     if options.embed_metadata {
         args.push("--embed-metadata".into());
     }
-    if options.embed_thumbnail {
+    // Only ask for a cover where the container can hold one.
+    if options.embed_thumbnail && options.container.supports_embedded_thumbnail() {
         args.push("--embed-thumbnail".into());
     }
     if options.embed_chapters {
@@ -272,6 +277,29 @@ mod tests {
         assert!(has_pair(&args, "--audio-format", "mp3"));
         assert!(has_pair(&args, "--audio-quality", "0"));
         assert!(!args.contains(&"--merge-output-format".to_string()));
+    }
+
+    #[test]
+    fn a_cover_is_only_requested_where_it_fits() {
+        let mut options = DownloadOptions::video("u", "/out");
+        options.embed_thumbnail = true;
+
+        options.container = Container::Mp4;
+        assert!(build_download_args(&options, &env()).contains(&"--embed-thumbnail".to_string()));
+
+        // Embedding into webm fails at the very end, after the whole file has
+        // been downloaded — so it is never asked for.
+        options.container = Container::Webm;
+        assert!(!build_download_args(&options, &env()).contains(&"--embed-thumbnail".to_string()));
+
+        options.container = Container::Source;
+        assert!(!build_download_args(&options, &env()).contains(&"--embed-thumbnail".to_string()));
+    }
+
+    #[test]
+    fn postprocessing_errors_do_not_discard_the_file() {
+        let args = build_download_args(&DownloadOptions::video("u", "/out"), &env());
+        assert!(args.contains(&"--ignore-errors".to_string()));
     }
 
     #[test]
