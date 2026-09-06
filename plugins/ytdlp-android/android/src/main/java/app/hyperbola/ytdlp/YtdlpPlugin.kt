@@ -234,11 +234,19 @@ class YtdlpPlugin(private val activity: Activity) : Plugin(activity) {
         Os.symlink(target.absolutePath, linkFile.absolutePath)
     }
 
+    /**
+     * The engine's own yt-dlp version. Waits for the unpack: answering "no
+     * version" during startup makes the app announce that nothing can
+     * download, on a phone where the engine is built in.
+     */
     @Command
     fun engineVersion(invoke: Invoke) {
-        val result = JSObject()
-        result.put("version", YoutubeDL.getInstance().version(activity))
-        invoke.resolve(result)
+        scope.launch {
+            if (!awaitEngine(invoke)) return@launch
+            val result = JSObject()
+            result.put("version", YoutubeDL.getInstance().version(activity))
+            invoke.resolve(result)
+        }
     }
 
     /** The Android counterpart of downloading a fresh yt-dlp binary. */
