@@ -22,10 +22,12 @@ import app.tauri.plugin.Plugin
 import com.yausername.ffmpeg.FFmpeg
 import com.yausername.youtubedl_android.YoutubeDL
 import com.yausername.youtubedl_android.YoutubeDLRequest
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentLinkedQueue
@@ -76,8 +78,8 @@ class YtdlpPlugin(private val activity: Activity) : Plugin(activity) {
     private val output = ConcurrentHashMap<String, ConcurrentLinkedQueue<String>>()
     private val finished = ConcurrentHashMap<String, Boolean>()
 
-    @Volatile
-    private var ready = false
+    /** Completed once the engine has unpacked itself, successfully or not. */
+    private val started = CompletableDeferred<Unit>()
 
     @Volatile
     private var initError: String? = null
@@ -87,17 +89,31 @@ class YtdlpPlugin(private val activity: Activity) : Plugin(activity) {
             try {
                 YoutubeDL.getInstance().init(activity.application)
                 FFmpeg.getInstance().init(activity.application)
-                ready = true
             } catch (e: Exception) {
                 initError = e.message ?: "failed to initialise the download engine"
+            } finally {
+                started.complete(Unit)
             }
         }
     }
 
-    private fun requireEngine(invoke: Invoke): Boolean {
-        if (ready) return true
-        invoke.reject(initError ?: "the download engine is still starting")
-        return false
+    /**
+     * Waits for the engine instead of refusing.
+     *
+     * Unpacking Python and ffmpeg takes several seconds on first launch, and
+     * the app checks for updates as soon as it opens — refusing during that
+     * window turned a slow start into a failure the user had to retry.
+     */
+    private suspend fun awaitEngine(invoke: Invoke): Boolean {
+        if (withTimeoutOrNull(90_000) { started.await() } == null) {
+            invoke.reject("the download engine did not finish starting")
+            return false
+        }
+        initError?.let {
+            invoke.reject(it)
+            return false
+        }
+        return true
     }
 
     private fun request(url: String, args: Array<String>): YoutubeDLRequest {
@@ -110,9 +126,9 @@ class YtdlpPlugin(private val activity: Activity) : Plugin(activity) {
 
     @Command
     fun probe(invoke: Invoke) {
-        if (!requireEngine(invoke)) return
         val args = invoke.parseArgs(ProbeArgs::class.java)
         scope.launch {
+            if (!awaitEngine(invoke)) return@launch
             try {
                 val response = YoutubeDL.getInstance().execute(request(args.url, args.args))
                 val result = JSObject()
@@ -126,12 +142,15 @@ class YtdlpPlugin(private val activity: Activity) : Plugin(activity) {
 
     @Command
     fun download(invoke: Invoke) {
-        if (!requireEngine(invoke)) return
         val args = invoke.parseArgs(DownloadArgs::class.java)
         val lines = ConcurrentLinkedQueue<String>()
         output[args.id] = lines
         finished[args.id] = false
         scope.launch {
+            if (!awaitEngine(invoke)) {
+                finished[args.id] = true
+                return@launch
+            }
             try {
                 File(args.outputDir).mkdirs()
                 val response = YoutubeDL.getInstance()
@@ -225,13 +244,13 @@ class YtdlpPlugin(private val activity: Activity) : Plugin(activity) {
     /** The Android counterpart of downloading a fresh yt-dlp binary. */
     @Command
     fun updateEngine(invoke: Invoke) {
-        if (!requireEngine(invoke)) return
         val args = invoke.parseArgs(UpdateArgs::class.java)
         val channel = when (args.channel.lowercase()) {
             "nightly" -> YoutubeDL.UpdateChannel.NIGHTLY
             else -> YoutubeDL.UpdateChannel.STABLE
         }
         scope.launch {
+            if (!awaitEngine(invoke)) return@launch
             try {
                 val status = YoutubeDL.getInstance().updateYoutubeDL(activity.application, channel)
                 val result = JSObject()
