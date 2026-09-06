@@ -118,9 +118,11 @@ class YtdlpPlugin(private val activity: Activity) : Plugin(activity) {
 
     private fun request(url: String, args: Array<String>): YoutubeDLRequest {
         val request = YoutubeDLRequest(url)
-        // The engine emits a flat argument vector; youtubedl-android takes
-        // options one token at a time.
-        args.forEach { request.addOption(it) }
+        // addCommands appends the arguments verbatim. addOption must not be
+        // used here: it keys options by name in a map, which folds repeated
+        // flags together and separates values from the flags they belong to —
+        // yt-dlp then sees the stray values as URLs and refuses them.
+        request.addCommands(args.toList())
         return request
     }
 
