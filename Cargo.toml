@@ -22,5 +22,6 @@ opt-level = "s"
 # four Android targets to save a few hundred kilobytes.
 lto = "thin"
 codegen-units = 4
-panic = "abort"
+# Not "abort": a panic in one download must not take the whole app — and the
+# queue — down with it. Unwinding costs a couple of percent of size.
 strip = "symbols"
