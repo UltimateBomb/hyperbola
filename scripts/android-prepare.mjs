@@ -50,6 +50,14 @@ function patchManifest() {
 function patchGradle() {
   if (!existsSync(gradlePath)) throw new Error(`missing ${gradlePath}`);
   let gradle = readFileSync(gradlePath, "utf8");
+  // The download engine unpacks its own Python and ffmpeg through reflection,
+  // and R8 renames the classes it needs: the release build installed fine and
+  // then died on first launch inside YoutubeDL.init. Shrinking the dex saved
+  // around 8 MB in an app whose weight is native libraries, which is not a
+  // trade worth a crash.
+  if (gradle.includes("isMinifyEnabled = true")) {
+    gradle = gradle.replace(/isMinifyEnabled = true/g, "isMinifyEnabled = false");
+  }
   if (!gradle.includes("useLegacyPackaging")) {
     gradle = gradle.replace(
       /android\s*\{/,
