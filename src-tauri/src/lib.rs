@@ -309,24 +309,25 @@ struct DependencyPaths {
 #[tauri::command]
 fn dependency_paths(app: AppHandle) -> DependencyPaths {
     let state = app.state::<AppState>();
+    describe_dependencies(&state)
+}
 
-    #[cfg(target_os = "android")]
-    {
-        // Nothing is installed on disk here: the engine is part of the app.
-        DependencyPaths {
-            ytdlp: Some("bundled in the app".to_string()),
-            ffmpeg: state
-                .engine_ffmpeg_dir
-                .lock()
-                .unwrap()
-                .clone()
-                .map(|dir| format!("bundled in the app ({})", dir.display()))
-                .or_else(|| Some("bundled in the app".to_string())),
-            bin_dir: state.staging_dir.display().to_string(),
-        }
+/// Nothing is installed on disk on Android: the engine is part of the app.
+#[cfg(target_os = "android")]
+fn describe_dependencies(state: &AppState) -> DependencyPaths {
+    let ffmpeg = state.engine_ffmpeg_dir.lock().unwrap().clone();
+    DependencyPaths {
+        ytdlp: Some("bundled in the app".to_string()),
+        ffmpeg: Some(match ffmpeg {
+            Some(dir) => format!("bundled in the app ({})", dir.display()),
+            None => "bundled in the app".to_string(),
+        }),
+        bin_dir: state.staging_dir.display().to_string(),
     }
+}
 
-    #[cfg(not(target_os = "android"))]
+#[cfg(not(target_os = "android"))]
+fn describe_dependencies(state: &AppState) -> DependencyPaths {
     DependencyPaths {
         ytdlp: state.deps.ytdlp_path().map(|p| p.display().to_string()),
         ffmpeg: state.deps.ffmpeg_path().map(|p| p.display().to_string()),

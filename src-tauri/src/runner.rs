@@ -275,6 +275,7 @@ pub async fn run(
         crate::pump(app.clone());
         return;
     };
+    log::info!("download {id}: publishing {}", source.display());
     let handle = app.clone();
     let published = tauri::async_runtime::spawn_blocking(move || {
         handle.ytdlp().publish(PublishRequest {
@@ -283,8 +284,6 @@ pub async fn run(
         })
     })
     .await;
-
-    log::info!("download {id}: publishing {}", source.display());
     match published {
         Ok(Ok(result)) => {
             let state = app.state::<AppState>();
