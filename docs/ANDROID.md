@@ -76,6 +76,27 @@ Three things that only a device could show, all fixed:
   ignored postprocessing error — with the finished file already written. The
   file is the proof of a download, not the exit code
 
+## Size
+
+One APK per architecture, about **56–60 MB**. Nearly all of it is the engine
+and it cannot be otherwise: Android only executes code from an app's native
+library directory, so ffmpeg (35 MB), the Python runtime (14 MB) and yt-dlp
+(3 MB) must ship inside the package — there is no "download it on first run"
+the way the desktop does it.
+
+The app's own library is 6.4 MB. It was 178 MB until the build was switched
+from debug to release, which is where a 110 MB APK came from.
+
+Two things that are deliberately not done:
+
+- **dex shrinking is off.** R8 renames the classes the engine uses to unpack
+  itself, and the release build then installed and died on first launch. It
+  saved about 8 MB in an app whose weight is native libraries.
+- **ffmpeg is the full build.** A trimmed one would save 15–20 MB and put us
+  on the hook for every codec yt-dlp meets on hundreds of sites, for four
+  architectures, forever. The failure would land on a user's video, not in
+  CI.
+
 ## Known limits
 
 - Downloads stop when Android kills the app; a foreground service to hold them

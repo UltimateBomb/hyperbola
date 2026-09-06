@@ -19,7 +19,7 @@ Early. The engine is written and tested; the shells are being built.
 | `hyperbola-runner` + CLI harness | real downloads verified on macOS and Windows |
 | Windows app | installs, runs, and fetches yt-dlp and ffmpeg by itself on a clean machine |
 | Update centre | app, yt-dlp and ffmpeg in one list; failures shown, not swallowed |
-| Android app | verified on a phone: engine runs, updates itself, downloads land in Downloads |
+| Android app | verified on a phone: engine runs, updates itself, downloads land in Downloads; 56–60 MB per architecture |
 | CI | Windows installer and one APK per ABI on every run |
 
 Verified end to end on Windows: a fresh install downloaded yt-dlp (17 MB) and
