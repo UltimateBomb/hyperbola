@@ -81,9 +81,11 @@ impl Container {
 
     pub fn kind(self) -> MediaKind {
         match self {
-            Container::Mp3 | Container::Opus | Container::Flac | Container::Wav | Container::M4a => {
-                MediaKind::Audio
-            }
+            Container::Mp3
+            | Container::Opus
+            | Container::Flac
+            | Container::Wav
+            | Container::M4a => MediaKind::Audio,
             _ => MediaKind::Video,
         }
     }
@@ -123,14 +125,24 @@ impl Format {
     pub fn label(&self) -> String {
         let mut parts: Vec<String> = Vec::new();
         match (self.height, self.fps) {
-            (Some(h), Some(fps)) if fps >= 50.0 => parts.push(format!("{h}p{}", fps.round() as u32)),
+            (Some(h), Some(fps)) if fps >= 50.0 => {
+                parts.push(format!("{h}p{}", fps.round() as u32))
+            }
             (Some(h), _) => parts.push(format!("{h}p")),
             (None, _) => parts.push("audio".to_string()),
         }
         parts.push(self.ext.clone());
-        if let Some(codec) = self.vcodec.as_deref().filter(|c| *c != "none" && !c.is_empty()) {
+        if let Some(codec) = self
+            .vcodec
+            .as_deref()
+            .filter(|c| *c != "none" && !c.is_empty())
+        {
             parts.push(codec.split('.').next().unwrap_or(codec).to_string());
-        } else if let Some(codec) = self.acodec.as_deref().filter(|c| *c != "none" && !c.is_empty()) {
+        } else if let Some(codec) = self
+            .acodec
+            .as_deref()
+            .filter(|c| *c != "none" && !c.is_empty())
+        {
             parts.push(codec.split('.').next().unwrap_or(codec).to_string());
         }
         if let Some(size) = self.filesize {
@@ -226,20 +238,15 @@ impl TimeFrame {
 }
 
 /// Where cookies come from, when a site needs a logged-in session.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "source", content = "value")]
 pub enum CookieSource {
+    #[default]
     None,
     /// Read live cookies from an installed browser profile (desktop only).
     Browser(String),
     /// A Netscape-format cookies file the user exported.
     File(PathBuf),
-}
-
-impl Default for CookieSource {
-    fn default() -> Self {
-        CookieSource::None
-    }
 }
 
 /// Everything the user chose for one download.
@@ -364,8 +371,13 @@ pub enum DownloadState {
     Running(Progress),
     /// Stopped by the user; the partial file is kept so it can resume.
     Paused(Progress),
-    Completed { path: PathBuf },
-    Failed { message: String, retryable: bool },
+    Completed {
+        path: PathBuf,
+    },
+    Failed {
+        message: String,
+        retryable: bool,
+    },
     Canceled,
 }
 
@@ -373,7 +385,9 @@ impl DownloadState {
     pub fn is_terminal(&self) -> bool {
         matches!(
             self,
-            DownloadState::Completed { .. } | DownloadState::Failed { .. } | DownloadState::Canceled
+            DownloadState::Completed { .. }
+                | DownloadState::Failed { .. }
+                | DownloadState::Canceled
         )
     }
 
@@ -507,7 +521,11 @@ mod tests {
 
     #[test]
     fn progress_fraction_needs_a_total() {
-        let mut p = Progress { stage: Stage::Downloading, downloaded_bytes: 50, ..Default::default() };
+        let mut p = Progress {
+            stage: Stage::Downloading,
+            downloaded_bytes: 50,
+            ..Default::default()
+        };
         assert_eq!(p.fraction(), None);
         p.total_bytes = Some(200);
         assert_eq!(p.fraction(), Some(0.25));

@@ -51,7 +51,10 @@ async fn run(args: Vec<String>) -> Result<(), String> {
             }
             for item in &probe.items {
                 println!("\n{}", item.title);
-                println!("  by       {}", item.uploader.as_deref().unwrap_or("unknown"));
+                println!(
+                    "  by       {}",
+                    item.uploader.as_deref().unwrap_or("unknown")
+                );
                 println!("  duration {:.0}s", item.duration_secs.unwrap_or(0.0));
                 println!("  formats  {}", item.formats.len());
                 let heights: Vec<String> =
@@ -139,7 +142,10 @@ fn usage() -> String {
 }
 
 fn flag(args: &[String], name: &str) -> Option<String> {
-    args.iter().position(|a| a == name).and_then(|i| args.get(i + 1)).cloned()
+    args.iter()
+        .position(|a| a == name)
+        .and_then(|i| args.get(i + 1))
+        .cloned()
 }
 
 fn find_ytdlp() -> Result<PathBuf, String> {

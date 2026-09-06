@@ -107,7 +107,10 @@ pub fn emit_queue(app: &AppHandle) {
     let state = app.state::<AppState>();
     let snapshot = {
         let queue = state.queue.lock().unwrap();
-        Snapshot { items: queue.items().to_vec(), stats: queue.stats() }
+        Snapshot {
+            items: queue.items().to_vec(),
+            stats: queue.stats(),
+        }
     };
     let due = {
         let mut last = state.last_save.lock().unwrap();
@@ -213,7 +216,10 @@ fn add_downloads(app: AppHandle, requests: Vec<AddRequest>) -> Vec<DownloadId> {
 fn queue_snapshot(app: AppHandle) -> Snapshot {
     let state = app.state::<AppState>();
     let queue = state.queue.lock().unwrap();
-    Snapshot { items: queue.items().to_vec(), stats: queue.stats() }
+    Snapshot {
+        items: queue.items().to_vec(),
+        stats: queue.stats(),
+    }
 }
 
 #[tauri::command]
@@ -291,7 +297,9 @@ fn set_settings(app: AppHandle, settings: Settings) -> Result<(), String> {
         let mut queue = state.queue.lock().unwrap();
         queue.set_max_concurrent(settings.max_concurrent);
     }
-    settings.save(&state.config_path).map_err(|e| e.to_string())?;
+    settings
+        .save(&state.config_path)
+        .map_err(|e| e.to_string())?;
     *state.settings.lock().unwrap() = settings;
     pump(app.clone());
     Ok(())
@@ -368,12 +376,13 @@ async fn build_report(app: &AppHandle) -> UpdateReport {
         use tauri_plugin_ytdlp::YtdlpExt;
 
         let handle = app.clone();
-        let installed = tauri::async_runtime::spawn_blocking(move || handle.ytdlp().engine_version())
-            .await
-            .ok()
-            .and_then(|result| result.ok())
-            .and_then(|v| v.version)
-            .map(|v| Version::parse(&v));
+        let installed =
+            tauri::async_runtime::spawn_blocking(move || handle.ytdlp().engine_version())
+                .await
+                .ok()
+                .and_then(|result| result.ok())
+                .and_then(|v| v.version)
+                .map(|v| Version::parse(&v));
 
         let latest = {
             let state = app.state::<AppState>();
@@ -458,7 +467,11 @@ async fn install_update(app: AppHandle, component: Component) -> Result<String, 
     let progress = move |downloaded: u64, total: Option<u64>| {
         let _ = handle.emit(
             "dependency-progress",
-            DependencyProgress { component, downloaded, total },
+            DependencyProgress {
+                component,
+                downloaded,
+                total,
+            },
         );
     };
     if component == Component::App {
@@ -499,7 +512,10 @@ async fn install_update(app: AppHandle, component: Component) -> Result<String, 
                 log::error!("installing {} failed: {message}", component.display_name());
                 let _ = app.emit(
                     "dependency-error",
-                    DependencyError { component, message: message.clone() },
+                    DependencyError {
+                        component,
+                        message: message.clone(),
+                    },
                 );
                 return Err(message);
             }
@@ -557,14 +573,18 @@ async fn pick_output_folder(app: AppHandle) -> Result<Option<String>, String> {
     {
         use tauri_plugin_ytdlp::YtdlpExt;
         let handle = app.clone();
-        let selection = tauri::async_runtime::spawn_blocking(move || handle.ytdlp().pick_output_folder())
-            .await
-            .map_err(|e| e.to_string())?
-            .map_err(|e| e.to_string())?;
+        let selection =
+            tauri::async_runtime::spawn_blocking(move || handle.ytdlp().pick_output_folder())
+                .await
+                .map_err(|e| e.to_string())?
+                .map_err(|e| e.to_string())?;
         let Some(uri) = selection.uri.clone() else {
             return Ok(None);
         };
-        let label = selection.label.clone().unwrap_or_else(|| "Selected folder".to_string());
+        let label = selection
+            .label
+            .clone()
+            .unwrap_or_else(|| "Selected folder".to_string());
         {
             let state = app.state::<AppState>();
             let mut settings = state.settings.lock().unwrap();
@@ -640,8 +660,9 @@ pub fn run() {
                 tauri::async_runtime::spawn(async move {
                     use tauri_plugin_ytdlp::YtdlpExt;
                     let engine = handle.clone();
-                    let paths = tauri::async_runtime::spawn_blocking(move || engine.ytdlp().engine_paths())
-                        .await;
+                    let paths =
+                        tauri::async_runtime::spawn_blocking(move || engine.ytdlp().engine_paths())
+                            .await;
                     match paths {
                         Ok(Ok(paths)) => {
                             log::info!("engine ffmpeg dir: {:?}", paths.ffmpeg_dir);
@@ -697,10 +718,8 @@ pub fn run() {
                         // Silence here used to mean the user saw a working app
                         // that could not merge a file, with nothing to read.
                         log::error!("could not install {}: {message}", component.display_name());
-                        let _ = startup.emit(
-                            "dependency-error",
-                            DependencyError { component, message },
-                        );
+                        let _ = startup
+                            .emit("dependency-error", DependencyError { component, message });
                     }
                 }
             });

@@ -32,14 +32,18 @@ mod tests {
     #[test]
     fn network_failures_are_retried() {
         assert!(is_retryable("[download] Connection reset by peer"));
-        assert!(is_retryable("Unable to download webpage: The read operation timed out"));
+        assert!(is_retryable(
+            "Unable to download webpage: The read operation timed out"
+        ));
         assert!(is_retryable("HTTP Error 503: Service Unavailable"));
     }
 
     #[test]
     fn gone_or_impossible_downloads_are_not_retried() {
         assert!(!is_retryable("[youtube] abc: Video unavailable"));
-        assert!(!is_retryable("ERROR: Private video. Sign in if you've been granted access"));
+        assert!(!is_retryable(
+            "ERROR: Private video. Sign in if you've been granted access"
+        ));
         assert!(!is_retryable("Requested format is not available"));
         assert!(!is_retryable("HTTP Error 404: Not Found"));
     }

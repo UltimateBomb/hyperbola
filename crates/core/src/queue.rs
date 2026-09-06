@@ -168,7 +168,10 @@ impl Queue {
             download.state = DownloadState::Queued;
             FailureOutcome::Requeued
         } else {
-            download.state = DownloadState::Failed { message: message.into(), retryable };
+            download.state = DownloadState::Failed {
+                message: message.into(),
+                retryable,
+            };
             FailureOutcome::GaveUp
         }
     }
@@ -210,7 +213,8 @@ impl Queue {
     /// the automatic policy applies again.
     pub fn retry(&mut self, id: DownloadId) {
         if let Some(download) = self.get_mut(id) {
-            if download.state.is_terminal() && !matches!(download.state, DownloadState::Completed { .. })
+            if download.state.is_terminal()
+                && !matches!(download.state, DownloadState::Completed { .. })
             {
                 download.attempts = 0;
                 download.state = DownloadState::Queued;
@@ -225,7 +229,10 @@ impl Queue {
     /// Drops completed and canceled entries, keeping failures visible.
     pub fn clear_finished(&mut self) {
         self.items.retain(|d| {
-            !matches!(d.state, DownloadState::Completed { .. } | DownloadState::Canceled)
+            !matches!(
+                d.state,
+                DownloadState::Completed { .. } | DownloadState::Canceled
+            )
         });
     }
 
@@ -262,7 +269,10 @@ mod tests {
     fn queue_with(count: usize, max_concurrent: usize) -> Queue {
         let mut queue = Queue::new(max_concurrent);
         for i in 0..count {
-            queue.add(DownloadOptions::video(format!("https://x/{i}"), "/out"), format!("clip {i}"));
+            queue.add(
+                DownloadOptions::video(format!("https://x/{i}"), "/out"),
+                format!("clip {i}"),
+            );
         }
         queue
     }
@@ -325,12 +335,18 @@ mod tests {
         queue.set_max_attempts(2);
 
         let id = queue.start_next().unwrap();
-        assert_eq!(queue.on_failed(id, "connection reset", true), FailureOutcome::Requeued);
+        assert_eq!(
+            queue.on_failed(id, "connection reset", true),
+            FailureOutcome::Requeued
+        );
         assert_eq!(queue.get(id).unwrap().state, DownloadState::Queued);
 
         // Second attempt.
         assert_eq!(queue.start_next(), Some(id));
-        assert_eq!(queue.on_failed(id, "connection reset", true), FailureOutcome::GaveUp);
+        assert_eq!(
+            queue.on_failed(id, "connection reset", true),
+            FailureOutcome::GaveUp
+        );
         match &queue.get(id).unwrap().state {
             DownloadState::Failed { message, retryable } => {
                 assert_eq!(message, "connection reset");
@@ -345,7 +361,10 @@ mod tests {
     fn permanent_failures_are_not_retried() {
         let mut queue = queue_with(1, 1);
         let id = queue.start_next().unwrap();
-        assert_eq!(queue.on_failed(id, "Video unavailable", false), FailureOutcome::GaveUp);
+        assert_eq!(
+            queue.on_failed(id, "Video unavailable", false),
+            FailureOutcome::GaveUp
+        );
         assert_eq!(queue.stats().failed, 1);
     }
 
@@ -372,7 +391,11 @@ mod tests {
 
         queue.resume(id);
         assert_eq!(queue.get(id).unwrap().state, DownloadState::Queued);
-        assert_eq!(queue.get(id).unwrap().attempts, 1, "resume reuses the attempt");
+        assert_eq!(
+            queue.get(id).unwrap().attempts,
+            1,
+            "resume reuses the attempt"
+        );
     }
 
     #[test]
@@ -393,7 +416,10 @@ mod tests {
         queue.on_completed(id, "/out/clip.mp4");
         queue.cancel(id);
         queue.retry(id);
-        assert!(matches!(queue.get(id).unwrap().state, DownloadState::Completed { .. }));
+        assert!(matches!(
+            queue.get(id).unwrap().state,
+            DownloadState::Completed { .. }
+        ));
     }
 
     #[test]

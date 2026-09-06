@@ -29,13 +29,17 @@ pub struct Ytdlp<R: Runtime>(PluginHandle<R>);
 impl<R: Runtime> Ytdlp<R> {
     /// Reads a URL's metadata. Returns yt-dlp's JSON for the engine to parse.
     pub fn probe(&self, payload: ProbeRequest) -> Result<ProbeResponse> {
-        self.0.run_mobile_plugin("probe", payload).map_err(Into::into)
+        self.0
+            .run_mobile_plugin("probe", payload)
+            .map_err(Into::into)
     }
 
     /// Runs a download to completion. Blocks; poll [`Ytdlp::poll_output`] from
     /// another task to follow progress while it runs.
     pub fn download(&self, payload: DownloadRequest) -> Result<DownloadResponse> {
-        self.0.run_mobile_plugin("download", payload).map_err(Into::into)
+        self.0
+            .run_mobile_plugin("download", payload)
+            .map_err(Into::into)
     }
 
     /// Collects the output lines produced since the previous call.
@@ -54,7 +58,9 @@ impl<R: Runtime> Ytdlp<R> {
 
     /// Where ffmpeg can be found under the name yt-dlp expects.
     pub fn engine_paths(&self) -> Result<EnginePaths> {
-        self.0.run_mobile_plugin("enginePaths", ()).map_err(Into::into)
+        self.0
+            .run_mobile_plugin("enginePaths", ())
+            .map_err(Into::into)
     }
 
     pub fn engine_version(&self) -> Result<EngineVersion> {
@@ -67,7 +73,12 @@ impl<R: Runtime> Ytdlp<R> {
     /// downloading a new yt-dlp binary on the desktop.
     pub fn update_engine(&self, channel: &str) -> Result<UpdateResult> {
         self.0
-            .run_mobile_plugin("updateEngine", UpdateRequest { channel: channel.to_string() })
+            .run_mobile_plugin(
+                "updateEngine",
+                UpdateRequest {
+                    channel: channel.to_string(),
+                },
+            )
             .map_err(Into::into)
     }
 
@@ -82,6 +93,8 @@ impl<R: Runtime> Ytdlp<R> {
     /// Moves a finished file out of the app's private directory into the
     /// user's chosen folder, or into Downloads when none was chosen.
     pub fn publish(&self, payload: PublishRequest) -> Result<PublishResult> {
-        self.0.run_mobile_plugin("publish", payload).map_err(Into::into)
+        self.0
+            .run_mobile_plugin("publish", payload)
+            .map_err(Into::into)
     }
 }

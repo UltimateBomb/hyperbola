@@ -49,18 +49,13 @@ impl Component {
 }
 
 /// Which release stream to follow.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Channel {
+    #[default]
     Stable,
     /// yt-dlp nightlies carry extractor fixes days before a stable release.
     Nightly,
-}
-
-impl Default for Channel {
-    fn default() -> Self {
-        Channel::Stable
-    }
 }
 
 /// What the app knows about one component right now.
@@ -79,17 +74,27 @@ pub struct ComponentStatus {
 #[serde(rename_all = "snake_case", tag = "state")]
 pub enum UpdateState {
     UpToDate,
-    UpdateAvailable { from: Version, to: Version },
+    UpdateAvailable {
+        from: Version,
+        to: Version,
+    },
     /// Not installed yet — a first run, or a dependency the user deleted.
-    Missing { to: Version },
+    Missing {
+        to: Version,
+    },
     /// The check itself failed; the app keeps working with what it has.
-    Unknown { reason: String },
+    Unknown {
+        reason: String,
+    },
 }
 
 impl UpdateState {
     /// True when there is something to install.
     pub fn is_actionable(&self) -> bool {
-        matches!(self, UpdateState::UpdateAvailable { .. } | UpdateState::Missing { .. })
+        matches!(
+            self,
+            UpdateState::UpdateAvailable { .. } | UpdateState::Missing { .. }
+        )
     }
 }
 
@@ -106,13 +111,20 @@ pub fn evaluate(
             reason: failure.unwrap_or_else(|| "update check did not run".to_string()),
         },
         (None, Some(remote)) => UpdateState::Missing { to: remote.clone() },
-        (Some(local), Some(remote)) if local.is_older_than(remote) => UpdateState::UpdateAvailable {
-            from: local.clone(),
-            to: remote.clone(),
-        },
+        (Some(local), Some(remote)) if local.is_older_than(remote) => {
+            UpdateState::UpdateAvailable {
+                from: local.clone(),
+                to: remote.clone(),
+            }
+        }
         (Some(_), Some(_)) => UpdateState::UpToDate,
     };
-    ComponentStatus { component, installed, latest, state }
+    ComponentStatus {
+        component,
+        installed,
+        latest,
+        state,
+    }
 }
 
 /// The whole update picture, as the update center shows it.
@@ -129,8 +141,11 @@ impl UpdateReport {
     /// Components with something to install, critical ones first — the order
     /// the "update everything" button works through.
     pub fn actionable(&self) -> Vec<&ComponentStatus> {
-        let mut items: Vec<&ComponentStatus> =
-            self.components.iter().filter(|c| c.state.is_actionable()).collect();
+        let mut items: Vec<&ComponentStatus> = self
+            .components
+            .iter()
+            .filter(|c| c.state.is_actionable())
+            .collect();
         items.sort_by_key(|c| (!c.component.is_critical(), c.component));
         items
     }
@@ -141,9 +156,9 @@ impl UpdateReport {
 
     /// True when a component that downloads cannot work without is missing.
     pub fn is_blocked(&self) -> bool {
-        self.components.iter().any(|c| {
-            c.component.is_critical() && matches!(c.state, UpdateState::Missing { .. })
-        })
+        self.components
+            .iter()
+            .any(|c| c.component.is_critical() && matches!(c.state, UpdateState::Missing { .. }))
     }
 
     pub fn status_of(&self, component: Component) -> Option<&ComponentStatus> {
@@ -157,7 +172,10 @@ impl UpdateReport {
     pub fn summary(&self) -> String {
         let actionable = self.actionable();
         if !actionable.is_empty() {
-            let names: Vec<&str> = actionable.iter().map(|c| c.component.display_name()).collect();
+            let names: Vec<&str> = actionable
+                .iter()
+                .map(|c| c.component.display_name())
+                .collect();
             return format!("Update available: {}", names.join(", "));
         }
         let unchecked: Vec<&str> = self
@@ -198,11 +216,19 @@ pub struct Release {
 impl Release {
     /// First asset whose name contains every one of `must_contain` and none of
     /// `must_not_contain`, matched case-insensitively.
-    pub fn find_asset(&self, must_contain: &[&str], must_not_contain: &[&str]) -> Option<&ReleaseAsset> {
+    pub fn find_asset(
+        &self,
+        must_contain: &[&str],
+        must_not_contain: &[&str],
+    ) -> Option<&ReleaseAsset> {
         self.assets.iter().find(|asset| {
             let name = asset.name.to_ascii_lowercase();
-            must_contain.iter().all(|needle| name.contains(&needle.to_ascii_lowercase()))
-                && must_not_contain.iter().all(|needle| !name.contains(&needle.to_ascii_lowercase()))
+            must_contain
+                .iter()
+                .all(|needle| name.contains(&needle.to_ascii_lowercase()))
+                && must_not_contain
+                    .iter()
+                    .all(|needle| !name.contains(&needle.to_ascii_lowercase()))
         })
     }
 }
@@ -289,8 +315,14 @@ mod tests {
 
     #[test]
     fn components_serialise_under_the_names_the_ui_uses() {
-        assert_eq!(serde_json::to_string(&Component::FFmpeg).unwrap(), "\"ffmpeg\"");
-        assert_eq!(serde_json::to_string(&Component::YtDlp).unwrap(), "\"yt_dlp\"");
+        assert_eq!(
+            serde_json::to_string(&Component::FFmpeg).unwrap(),
+            "\"ffmpeg\""
+        );
+        assert_eq!(
+            serde_json::to_string(&Component::YtDlp).unwrap(),
+            "\"yt_dlp\""
+        );
         assert_eq!(serde_json::to_string(&Component::App).unwrap(), "\"app\"");
         assert_eq!(
             serde_json::from_str::<Component>("\"ffmpeg\"").unwrap(),
@@ -300,10 +332,18 @@ mod tests {
 
     #[test]
     fn an_older_install_is_an_update() {
-        let status = evaluate(Component::YtDlp, Some(v("2025.11.12")), Some(v("2026.03.17")), None);
+        let status = evaluate(
+            Component::YtDlp,
+            Some(v("2025.11.12")),
+            Some(v("2026.03.17")),
+            None,
+        );
         assert_eq!(
             status.state,
-            UpdateState::UpdateAvailable { from: v("2025.11.12"), to: v("2026.03.17") }
+            UpdateState::UpdateAvailable {
+                from: v("2025.11.12"),
+                to: v("2026.03.17")
+            }
         );
         assert!(status.state.is_actionable());
     }
@@ -311,7 +351,12 @@ mod tests {
     #[test]
     fn a_newer_install_is_not_a_downgrade_prompt() {
         // Happens with nightlies: local build is ahead of the stable feed.
-        let status = evaluate(Component::YtDlp, Some(v("2026.04.01")), Some(v("2026.03.17")), None);
+        let status = evaluate(
+            Component::YtDlp,
+            Some(v("2026.04.01")),
+            Some(v("2026.03.17")),
+            None,
+        );
         assert_eq!(status.state, UpdateState::UpToDate);
     }
 
@@ -340,19 +385,35 @@ mod tests {
         let report = UpdateReport::new(vec![
             evaluate(Component::App, Some(v("0.1.0")), Some(v("0.2.0")), None),
             evaluate(Component::FFmpeg, Some(v("7.1")), Some(v("7.1.1")), None),
-            evaluate(Component::YtDlp, Some(v("2025.11.12")), Some(v("2026.03.17")), None),
+            evaluate(
+                Component::YtDlp,
+                Some(v("2025.11.12")),
+                Some(v("2026.03.17")),
+                None,
+            ),
         ]);
-        let names: Vec<&str> =
-            report.actionable().iter().map(|c| c.component.display_name()).collect();
+        let names: Vec<&str> = report
+            .actionable()
+            .iter()
+            .map(|c| c.component.display_name())
+            .collect();
         assert_eq!(names, vec!["yt-dlp", "Hyperbola", "ffmpeg"]);
         assert!(report.has_updates());
-        assert_eq!(report.summary(), "Update available: yt-dlp, Hyperbola, ffmpeg");
+        assert_eq!(
+            report.summary(),
+            "Update available: yt-dlp, Hyperbola, ffmpeg"
+        );
     }
 
     #[test]
     fn report_is_blocked_only_when_a_critical_component_is_absent() {
         let missing_ffmpeg = UpdateReport::new(vec![
-            evaluate(Component::YtDlp, Some(v("2026.03.17")), Some(v("2026.03.17")), None),
+            evaluate(
+                Component::YtDlp,
+                Some(v("2026.03.17")),
+                Some(v("2026.03.17")),
+                None,
+            ),
             evaluate(Component::FFmpeg, None, Some(v("7.1.1")), None),
         ]);
         assert!(!missing_ffmpeg.is_blocked());
@@ -369,8 +430,18 @@ mod tests {
     #[test]
     fn a_failed_check_does_not_read_as_health() {
         let report = UpdateReport::new(vec![
-            evaluate(Component::YtDlp, Some(v("2026.03.17")), Some(v("2026.03.17")), None),
-            evaluate(Component::App, Some(v("0.1.0")), None, Some("offline".into())),
+            evaluate(
+                Component::YtDlp,
+                Some(v("2026.03.17")),
+                Some(v("2026.03.17")),
+                None,
+            ),
+            evaluate(
+                Component::App,
+                Some(v("0.1.0")),
+                None,
+                Some("offline".into()),
+            ),
         ]);
         assert!(!report.has_updates());
         assert_eq!(report.summary(), "Could not check: Hyperbola");
@@ -414,16 +485,28 @@ mod tests {
     #[test]
     fn stable_channel_ignores_prereleases() {
         let releases = parse_releases(RELEASES_JSON).unwrap();
-        assert_eq!(latest_release(&releases, Channel::Stable).unwrap().tag, "2026.03.17");
-        assert_eq!(latest_release(&releases, Channel::Nightly).unwrap().tag, "2026.04.01.120000");
+        assert_eq!(
+            latest_release(&releases, Channel::Stable).unwrap().tag,
+            "2026.03.17"
+        );
+        assert_eq!(
+            latest_release(&releases, Channel::Nightly).unwrap().tag,
+            "2026.04.01.120000"
+        );
     }
 
     #[test]
     fn asset_matching_distinguishes_architectures() {
         let releases = parse_releases(RELEASES_JSON).unwrap();
         let stable = latest_release(&releases, Channel::Stable).unwrap();
-        assert_eq!(stable.find_asset(&["yt-dlp.exe"], &[]).unwrap().url, "https://x/yt-dlp.exe");
-        assert_eq!(stable.find_asset(&["arm64", ".exe"], &[]).unwrap().url, "https://x/arm.exe");
+        assert_eq!(
+            stable.find_asset(&["yt-dlp.exe"], &[]).unwrap().url,
+            "https://x/yt-dlp.exe"
+        );
+        assert_eq!(
+            stable.find_asset(&["arm64", ".exe"], &[]).unwrap().url,
+            "https://x/arm.exe"
+        );
         // The plain x64 build must not be matched by an arm64 request, and
         // vice versa.
         assert_eq!(
@@ -438,13 +521,19 @@ mod tests {
         let releases = parse_releases(RELEASES_JSON).unwrap();
         let stable = latest_release(&releases, Channel::Stable).unwrap();
         let published = stable.published_at.as_deref().unwrap();
-        assert_eq!(version_from_publish_date(published).unwrap(), v("2026.03.17"));
+        assert_eq!(
+            version_from_publish_date(published).unwrap(),
+            v("2026.03.17")
+        );
         assert!(version_from_publish_date("garbage").is_none());
         assert!(version_from_publish_date("2026-3-5T00:00:00Z").is_none());
     }
 
     #[test]
     fn broken_feed_is_an_update_error() {
-        assert!(matches!(parse_releases("{}").unwrap_err(), Error::Update(_)));
+        assert!(matches!(
+            parse_releases("{}").unwrap_err(),
+            Error::Update(_)
+        ));
     }
 }

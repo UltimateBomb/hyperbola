@@ -188,7 +188,12 @@ pub fn format_selector(options: &DownloadOptions) -> String {
 }
 
 /// Flags shared by probing and downloading.
-fn push_common(args: &mut Vec<String>, cookies: &CookieSource, proxy: Option<&str>, env: &RunnerEnv) {
+fn push_common(
+    args: &mut Vec<String>,
+    cookies: &CookieSource,
+    proxy: Option<&str>,
+    env: &RunnerEnv,
+) {
     if let Some(ffmpeg) = &env.ffmpeg_path {
         args.push("--ffmpeg-location".into());
         args.push(ffmpeg.display().to_string());
@@ -248,8 +253,10 @@ mod tests {
     fn every_invocation_ignores_the_users_global_config() {
         let options = DownloadOptions::video("https://x/y", "/out");
         assert!(build_download_args(&options, &env()).contains(&"--ignore-config".to_string()));
-        assert!(build_probe_args("https://x/y", &CookieSource::None, None, &env())
-            .contains(&"--ignore-config".to_string()));
+        assert!(
+            build_probe_args("https://x/y", &CookieSource::None, None, &env())
+                .contains(&"--ignore-config".to_string())
+        );
     }
 
     #[test]
@@ -323,7 +330,11 @@ mod tests {
     #[test]
     fn default_output_template_uses_the_title() {
         let options = DownloadOptions::video("u", "/out");
-        assert!(has_pair(&build_download_args(&options, &env()), "--output", "%(title)s.%(ext)s"));
+        assert!(has_pair(
+            &build_download_args(&options, &env()),
+            "--output",
+            "%(title)s.%(ext)s"
+        ));
     }
 
     #[test]
@@ -347,17 +358,28 @@ mod tests {
     #[test]
     fn time_frame_cuts_with_ffmpeg_not_download_sections() {
         let mut options = DownloadOptions::video("u", "/out");
-        options.time_frame = Some(TimeFrame { start_secs: 30.0, end_secs: 95.5 });
+        options.time_frame = Some(TimeFrame {
+            start_secs: 30.0,
+            end_secs: 95.5,
+        });
         let args = build_download_args(&options, &env());
         assert!(!args.contains(&"--download-sections".to_string()));
-        assert!(has_pair(&args, "--postprocessor-args", "Merger+ffmpeg_i:-ss 30.000 -t 65.500"));
+        assert!(has_pair(
+            &args,
+            "--postprocessor-args",
+            "Merger+ffmpeg_i:-ss 30.000 -t 65.500"
+        ));
     }
 
     #[test]
     fn cookies_from_browser_and_from_file_are_distinct() {
         let mut options = DownloadOptions::video("u", "/out");
         options.cookies = CookieSource::Browser("firefox".into());
-        assert!(has_pair(&build_download_args(&options, &env()), "--cookies-from-browser", "firefox"));
+        assert!(has_pair(
+            &build_download_args(&options, &env()),
+            "--cookies-from-browser",
+            "firefox"
+        ));
 
         options.cookies = CookieSource::File(PathBuf::from("/home/u/cookies.txt"));
         let args = build_download_args(&options, &env());

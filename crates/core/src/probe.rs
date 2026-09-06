@@ -62,11 +62,15 @@ fn build_item(source_url: &str, raw: RawInfo, playlist_index: Option<u32>) -> Me
             is_automatic: false,
         })
         .collect();
-    subtitles.extend(raw.automatic_captions.into_iter().map(|(language, tracks)| SubtitleTrack {
-        name: tracks.into_iter().find_map(|t| t.name),
-        language,
-        is_automatic: true,
-    }));
+    subtitles.extend(
+        raw.automatic_captions
+            .into_iter()
+            .map(|(language, tracks)| SubtitleTrack {
+                name: tracks.into_iter().find_map(|t| t.name),
+                language,
+                is_automatic: true,
+            }),
+    );
     subtitles.sort_by(|a, b| {
         a.is_automatic
             .cmp(&b.is_automatic)
@@ -225,11 +229,19 @@ mod tests {
     #[test]
     fn marks_approximate_sizes_as_estimates() {
         let probe = parse_probe("u", SINGLE_VIDEO).unwrap();
-        let f = probe.items[0].formats.iter().find(|f| f.id == "137").unwrap();
+        let f = probe.items[0]
+            .formats
+            .iter()
+            .find(|f| f.id == "137")
+            .unwrap();
         assert_eq!(f.filesize, Some(148_000_000));
         assert!(f.filesize_is_estimate);
 
-        let exact = probe.items[0].formats.iter().find(|f| f.id == "18").unwrap();
+        let exact = probe.items[0]
+            .formats
+            .iter()
+            .find(|f| f.id == "18")
+            .unwrap();
         assert!(!exact.filesize_is_estimate);
     }
 
@@ -283,8 +295,14 @@ mod tests {
         for output in ["null", "null\n", "  ", ""] {
             let err = parse_probe("https://example.com/x", output).unwrap_err();
             let message = err.to_string();
-            assert!(message.contains("nothing to download"), "unhelpful message: {message}");
-            assert!(!message.contains("RawInfo"), "leaked parser detail: {message}");
+            assert!(
+                message.contains("nothing to download"),
+                "unhelpful message: {message}"
+            );
+            assert!(
+                !message.contains("RawInfo"),
+                "leaked parser detail: {message}"
+            );
         }
     }
 }

@@ -32,7 +32,10 @@ impl Version {
     /// blocking an update check.
     pub fn parse(input: &str) -> Version {
         let raw = input.trim().to_string();
-        let body = raw.strip_prefix('v').or_else(|| raw.strip_prefix('V')).unwrap_or(&raw);
+        let body = raw
+            .strip_prefix('v')
+            .or_else(|| raw.strip_prefix('V'))
+            .unwrap_or(&raw);
         let numeric_end = body
             .char_indices()
             .find(|(_, c)| !c.is_ascii_digit() && *c != '.')
@@ -46,9 +49,17 @@ impl Version {
             .collect();
         let suffix = {
             let trimmed = rest.trim_start_matches(['-', '_', '+', '.']).trim();
-            if trimmed.is_empty() { None } else { Some(trimmed.to_string()) }
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            }
         };
-        Version { raw, segments, suffix }
+        Version {
+            raw,
+            segments,
+            suffix,
+        }
     }
 
     /// The string as it was reported by the component, for display.

@@ -42,7 +42,10 @@ pub struct Runner {
 
 impl Runner {
     pub fn new(ytdlp: impl Into<PathBuf>, env: RunnerEnv) -> Self {
-        Runner { ytdlp: ytdlp.into(), env }
+        Runner {
+            ytdlp: ytdlp.into(),
+            env,
+        }
     }
 
     pub fn ytdlp_path(&self) -> &Path {
@@ -167,7 +170,12 @@ impl Runner {
                 format!("yt-dlp exited with {status}")
             });
         }
-        Ok(Outcome { success: produced_file, destination, error, canceled: false })
+        Ok(Outcome {
+            success: produced_file,
+            destination,
+            error,
+            canceled: false,
+        })
     }
 }
 
@@ -187,7 +195,10 @@ fn record(event: &Event, destination: &mut Option<PathBuf>, error: &mut Option<S
 /// guess: there is nothing to search for, nothing to report, and no way to
 /// tell a network blip from a dead link.
 pub fn describe_failure(message: Option<String>, exit_code: Option<i32>, tail: &str) -> String {
-    if let Some(message) = message.map(|m| m.trim().to_string()).filter(|m| !m.is_empty()) {
+    if let Some(message) = message
+        .map(|m| m.trim().to_string())
+        .filter(|m| !m.is_empty())
+    {
         return message;
     }
     let last_line = tail
@@ -214,7 +225,6 @@ fn last_error_line(stderr: &str) -> String {
         .or_else(|| stderr.lines().last().map(|l| l.trim().to_string()))
         .unwrap_or_else(|| "yt-dlp failed".to_string())
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -247,7 +257,10 @@ mod tests {
 
     #[test]
     fn output_without_an_error_line_still_reports_something() {
-        assert_eq!(last_error_line("could not resolve host\n"), "could not resolve host");
+        assert_eq!(
+            last_error_line("could not resolve host\n"),
+            "could not resolve host"
+        );
         assert_eq!(last_error_line(""), "yt-dlp failed");
     }
 }

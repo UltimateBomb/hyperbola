@@ -55,7 +55,8 @@ impl Dependencies {
     }
 
     fn managed_path(&self, stem: &str) -> PathBuf {
-        self.bin_dir.join(format!("{stem}{}", std::env::consts::EXE_SUFFIX))
+        self.bin_dir
+            .join(format!("{stem}{}", std::env::consts::EXE_SUFFIX))
     }
 
     fn markers_path(&self) -> PathBuf {
@@ -118,7 +119,10 @@ impl Dependencies {
     }
 
     async fn releases(&self, repo: (&str, &str)) -> Result<Vec<Release>, String> {
-        let url = format!("https://api.github.com/repos/{}/{}/releases?per_page=15", repo.0, repo.1);
+        let url = format!(
+            "https://api.github.com/repos/{}/{}/releases?per_page=15",
+            repo.0, repo.1
+        );
         let response = self
             .http
             .get(&url)
@@ -165,8 +169,18 @@ impl Dependencies {
 
         // yt-dlp
         let ytdlp_status = match self.latest_ytdlp_version(channel).await {
-            Ok(latest) => evaluate(Component::YtDlp, installed_ytdlp.clone(), Some(latest), None),
-            Err(reason) => evaluate(Component::YtDlp, installed_ytdlp.clone(), None, Some(reason)),
+            Ok(latest) => evaluate(
+                Component::YtDlp,
+                installed_ytdlp.clone(),
+                Some(latest),
+                None,
+            ),
+            Err(reason) => evaluate(
+                Component::YtDlp,
+                installed_ytdlp.clone(),
+                None,
+                Some(reason),
+            ),
         };
 
         // ffmpeg: only builds Hyperbola installed itself are tracked for updates.
@@ -194,15 +208,27 @@ impl Dependencies {
         } else {
             let installed = Version::parse(self.markers().ffmpeg.as_deref().unwrap_or("0"));
             match self.latest_ffmpeg_build().await {
-                Ok(Some(latest)) => evaluate(Component::FFmpeg, Some(installed), Some(latest), None),
-                Ok(None) => evaluate(Component::FFmpeg, Some(installed), None, Some("no build".into())),
+                Ok(Some(latest)) => {
+                    evaluate(Component::FFmpeg, Some(installed), Some(latest), None)
+                }
+                Ok(None) => evaluate(
+                    Component::FFmpeg,
+                    Some(installed),
+                    None,
+                    Some("no build".into()),
+                ),
                 Err(reason) => evaluate(Component::FFmpeg, Some(installed), None, Some(reason)),
             }
         };
 
         // Hyperbola itself
         let app_status = match self.latest_app_version().await {
-            Ok(latest) => evaluate(Component::App, Some(Version::parse(app_version)), Some(latest), None),
+            Ok(latest) => evaluate(
+                Component::App,
+                Some(Version::parse(app_version)),
+                Some(latest),
+                None,
+            ),
             Err(reason) => evaluate(
                 Component::App,
                 Some(Version::parse(app_version)),
@@ -223,7 +249,11 @@ impl Dependencies {
         let releases = self.releases(FFMPEG_REPO).await?;
         Ok(releases
             .iter()
-            .filter_map(|r| r.published_at.as_deref().and_then(version_from_publish_date))
+            .filter_map(|r| {
+                r.published_at
+                    .as_deref()
+                    .and_then(version_from_publish_date)
+            })
             .max())
     }
 
@@ -268,14 +298,17 @@ impl Dependencies {
         &self,
         progress: &(dyn Fn(u64, Option<u64>) + Send + Sync),
     ) -> Result<Version, String> {
-        let (must, must_not) = ffmpeg_asset_patterns().ok_or("no ffmpeg build for this platform")?;
+        let (must, must_not) =
+            ffmpeg_asset_patterns().ok_or("no ffmpeg build for this platform")?;
         let releases = self.releases(FFMPEG_REPO).await?;
         let release = releases
             .iter()
             .filter(|r| r.find_asset(&must, &must_not).is_some())
             .max_by_key(|r| r.published_at.clone())
             .ok_or("no ffmpeg build for this platform")?;
-        let asset = release.find_asset(&must, &must_not).expect("filtered above");
+        let asset = release
+            .find_asset(&must, &must_not)
+            .expect("filtered above");
         let version = release
             .published_at
             .as_deref()
@@ -356,11 +389,14 @@ impl Dependencies {
             return Err(format!("download returned {}", response.status()));
         }
         let total = response.content_length();
-        let mut file = tokio::fs::File::create(target).await.map_err(|e| e.to_string())?;
+        let mut file = tokio::fs::File::create(target)
+            .await
+            .map_err(|e| e.to_string())?;
         let mut downloaded = 0u64;
         let mut stream = response.bytes_stream();
         while let Some(chunk) = stream.next().await {
-            let chunk = chunk.map_err(|e| format!("connection dropped after {downloaded} bytes: {e}"))?;
+            let chunk =
+                chunk.map_err(|e| format!("connection dropped after {downloaded} bytes: {e}"))?;
             downloaded += chunk.len() as u64;
             file.write_all(&chunk).await.map_err(|e| e.to_string())?;
             progress(downloaded, total);
@@ -448,7 +484,9 @@ fn extract_ffmpeg(archive: &Path, bin_dir: &Path) -> Result<Vec<PathBuf>, String
 #[cfg(unix)]
 fn make_executable(path: &Path) -> Result<(), String> {
     use std::os::unix::fs::PermissionsExt;
-    let mut perms = std::fs::metadata(path).map_err(|e| e.to_string())?.permissions();
+    let mut perms = std::fs::metadata(path)
+        .map_err(|e| e.to_string())?
+        .permissions();
     perms.set_mode(0o755);
     std::fs::set_permissions(path, perms).map_err(|e| e.to_string())
 }
@@ -461,7 +499,10 @@ fn make_executable(_path: &Path) -> Result<(), String> {
 /// Runs a binary and returns its stdout, or `None` if it could not run.
 async fn run_capture(program: &Path, args: &[&str]) -> Option<String> {
     let mut command = tokio::process::Command::new(program);
-    command.args(args).stdout(Stdio::piped()).stderr(Stdio::null());
+    command
+        .args(args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
@@ -486,7 +527,6 @@ pub fn which(program: &str) -> Option<PathBuf> {
     })
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -510,10 +550,19 @@ mod tests {
             .iter()
             .map(|p| p.file_name().unwrap().to_string_lossy().to_string())
             .collect();
-        assert!(names.iter().any(|n| n.starts_with("ffmpeg")), "no ffmpeg in {names:?}");
-        assert!(names.iter().any(|n| n.starts_with("ffprobe")), "no ffprobe in {names:?}");
+        assert!(
+            names.iter().any(|n| n.starts_with("ffmpeg")),
+            "no ffmpeg in {names:?}"
+        );
+        assert!(
+            names.iter().any(|n| n.starts_with("ffprobe")),
+            "no ffprobe in {names:?}"
+        );
         for path in &written {
-            assert!(std::fs::metadata(path).unwrap().len() > 1_000_000, "{path:?} looks empty");
+            assert!(
+                std::fs::metadata(path).unwrap().len() > 1_000_000,
+                "{path:?} looks empty"
+            );
         }
         let _ = std::fs::remove_dir_all(&dir);
     }

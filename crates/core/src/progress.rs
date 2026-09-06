@@ -140,9 +140,12 @@ fn parse_u64(field: Option<&str>) -> Option<u64> {
     if raw.is_empty() || raw == "NA" || raw == "None" {
         return None;
     }
-    raw.parse::<u64>()
-        .ok()
-        .or_else(|| raw.parse::<f64>().ok().filter(|v| v.is_finite() && *v >= 0.0).map(|v| v as u64))
+    raw.parse::<u64>().ok().or_else(|| {
+        raw.parse::<f64>()
+            .ok()
+            .filter(|v| v.is_finite() && *v >= 0.0)
+            .map(|v| v as u64)
+    })
 }
 
 fn parse_f64(field: Option<&str>) -> Option<f64> {
@@ -150,7 +153,9 @@ fn parse_f64(field: Option<&str>) -> Option<f64> {
     if raw.is_empty() || raw == "NA" || raw == "None" {
         return None;
     }
-    raw.parse::<f64>().ok().filter(|v| v.is_finite() && *v >= 0.0)
+    raw.parse::<f64>()
+        .ok()
+        .filter(|v| v.is_finite() && *v >= 0.0)
 }
 
 #[cfg(test)]
@@ -176,7 +181,9 @@ mod tests {
     #[test]
     fn falls_back_to_the_estimated_total() {
         let line = "@HB@|downloading|500|NA|2000|1000.0|NA";
-        let Event::Progress(p) = parse_line(line).unwrap() else { panic!("expected progress") };
+        let Event::Progress(p) = parse_line(line).unwrap() else {
+            panic!("expected progress")
+        };
         assert_eq!(p.total_bytes, Some(2000));
         assert_eq!(p.eta_secs, None);
     }
@@ -184,7 +191,9 @@ mod tests {
     #[test]
     fn accepts_float_byte_counts() {
         let line = "@HB@|downloading|1048576.0|10485760.0|NA|NA|NA";
-        let Event::Progress(p) = parse_line(line).unwrap() else { panic!("expected progress") };
+        let Event::Progress(p) = parse_line(line).unwrap() else {
+            panic!("expected progress")
+        };
         assert_eq!(p.downloaded_bytes, 1_048_576);
         assert_eq!(p.total_bytes, Some(10_485_760));
         assert_eq!(p.speed_bps, None);

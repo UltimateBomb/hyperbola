@@ -14,14 +14,14 @@ use hyperbola_core::progress::Event;
 use tauri::{AppHandle, Manager};
 use tokio::sync::oneshot;
 
-#[cfg(not(target_os = "android"))]
-use hyperbola_runner::Runner;
 #[cfg(target_os = "android")]
 use hyperbola_core::args::{build_download_args, build_probe_args};
 #[cfg(target_os = "android")]
 use hyperbola_core::probe::parse_probe;
 #[cfg(target_os = "android")]
 use hyperbola_core::progress::parse_line;
+#[cfg(not(target_os = "android"))]
+use hyperbola_runner::Runner;
 
 use crate::AppState;
 
@@ -79,7 +79,16 @@ pub async fn run(
     let outcome = runner
         .download(
             &options,
-            |event| apply(&events, id, event, &mut destination, &mut last_error, &mut last_emit),
+            |event| {
+                apply(
+                    &events,
+                    id,
+                    event,
+                    &mut destination,
+                    &mut last_error,
+                    &mut last_emit,
+                )
+            },
             Some(cancel),
         )
         .await;
@@ -164,7 +173,10 @@ pub async fn run(
         let state = app.state::<AppState>();
         let settings = state.settings.lock().unwrap();
         let env = state.runner_env(&settings);
-        (build_download_args(&options, &env), settings.android_tree_uri.clone())
+        (
+            build_download_args(&options, &env),
+            settings.android_tree_uri.clone(),
+        )
     };
 
     let request = DownloadRequest {
@@ -174,7 +186,8 @@ pub async fn run(
         output_dir: options.output_dir.display().to_string(),
     };
     let engine = app.clone();
-    let mut download = tauri::async_runtime::spawn_blocking(move || engine.ytdlp().download(request));
+    let mut download =
+        tauri::async_runtime::spawn_blocking(move || engine.ytdlp().download(request));
 
     let mut destination: Option<PathBuf> = None;
     let mut last_error: Option<String> = None;
@@ -212,10 +225,19 @@ pub async fn run(
     // are the ones that matter: the final path arrives at the very end.
     let handle = app.clone();
     let pid = process_id.clone();
-    if let Ok(Ok(output)) = tauri::async_runtime::spawn_blocking(move || handle.ytdlp().poll_output(&pid)).await {
+    if let Ok(Ok(output)) =
+        tauri::async_runtime::spawn_blocking(move || handle.ytdlp().poll_output(&pid)).await
+    {
         for line in output.lines {
             if let Some(event) = parse_line(&line) {
-                apply(&app, id, event, &mut destination, &mut last_error, &mut last_emit);
+                apply(
+                    &app,
+                    id,
+                    event,
+                    &mut destination,
+                    &mut last_error,
+                    &mut last_emit,
+                );
             }
         }
     }
@@ -252,7 +274,11 @@ pub async fn run(
             None,
             "",
         )),
-        Err(e) => Some(hyperbola_runner::describe_failure(Some(e.to_string()), None, "")),
+        Err(e) => Some(hyperbola_runner::describe_failure(
+            Some(e.to_string()),
+            None,
+            "",
+        )),
     };
 
     if let Some(message) = failed {
@@ -287,7 +313,11 @@ pub async fn run(
     match published {
         Ok(Ok(result)) => {
             let state = app.state::<AppState>();
-            state.queue.lock().unwrap().on_completed(id, PathBuf::from(result.display_path));
+            state
+                .queue
+                .lock()
+                .unwrap()
+                .on_completed(id, PathBuf::from(result.display_path));
         }
         Ok(Err(e)) => {
             finish_failed(&app, id, e.to_string(), false);
@@ -303,7 +333,6 @@ pub async fn run(
     crate::emit_queue(&app);
     crate::pump(app.clone());
 }
-
 
 /// Applies one event to the queue and, at most a few times a second, tells
 /// the window about it.
@@ -376,4 +405,3 @@ impl AppState {
         }
     }
 }
-
