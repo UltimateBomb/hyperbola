@@ -313,11 +313,15 @@ pub async fn run(
     match published {
         Ok(Ok(result)) => {
             let state = app.state::<AppState>();
-            state
-                .queue
-                .lock()
-                .unwrap()
-                .on_completed(id, PathBuf::from(result.display_path));
+            let mut queue = state.queue.lock().unwrap();
+            queue.on_completed(id, PathBuf::from(result.display_path));
+            // Other apps cannot read our directory: playing or sending the
+            // file later needs the handle the system gave it, not a path.
+            if let Some(download) = queue.get_mut(id) {
+                download.metadata.insert("uri".to_string(), result.uri);
+            }
+            drop(queue);
+            crate::save_queue(&app);
         }
         Ok(Err(e)) => {
             finish_failed(&app, id, e.to_string(), false);
