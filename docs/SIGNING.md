@@ -26,7 +26,7 @@ If the keystore is lost, no future build can update an installed app: every
 user has to uninstall and start over, losing their queue and settings. It
 cannot be regenerated — a key with the same name is still a different key.
 
-It is kept in three places, each verified byte for byte against the same
+It is kept in four places, each verified byte for byte against the same
 checksum:
 
 | Machine | Path |
@@ -34,6 +34,7 @@ checksum:
 | the Mac that made it | `~/Documents/hyperbola-signing/` |
 | the server | `~/secrets/hyperbola/` |
 | the Windows machine | `D:\secrets\hyperbola\` |
+| the external backup drive | `/Volumes/back/hyperbola-signing-key/` |
 
 Each copy carries a plain note next to it explaining what the files are, for
 whoever finds the folder without this document.
