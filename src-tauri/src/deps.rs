@@ -371,6 +371,16 @@ impl Dependencies {
             .find_asset(&must, &must_not)
             .ok_or("this release has no build for this platform")?;
         let _ = std::fs::create_dir_all(into);
+        // Last time's installer is 60 MB of a version nobody will install
+        // again, and on a phone that is real space. This directory holds
+        // nothing else.
+        if let Ok(entries) = std::fs::read_dir(into) {
+            for entry in entries.flatten() {
+                if entry.file_name() != asset.name.as_str() {
+                    let _ = std::fs::remove_file(entry.path());
+                }
+            }
+        }
         let target = into.join(&asset.name);
         self.download(&asset.url, &target, progress).await?;
         Ok(target)
@@ -637,6 +647,31 @@ mod tests {
                         None,
                     );
                     println!("  installed {installed} -> {:?}", status.state);
+                }
+            }
+            Err(e) => println!("the feed could not be read: {e}"),
+        }
+
+        // Every platform must find its own build in the newest release. A
+        // release that is missing one is announced to those users and then
+        // fails when they press the button.
+        match deps.releases(APP_REPO).await {
+            Ok(releases) => {
+                if let Some(newest) = latest_release(&releases, Channel::Stable) {
+                    println!("assets of {}:", newest.version);
+                    let wanted: [(&str, Vec<&str>); 5] = [
+                        ("windows", vec!["setup.exe"]),
+                        ("android arm64", android_apk_patterns(Some("arm64-v8a"))),
+                        ("android arm", android_apk_patterns(Some("armeabi-v7a"))),
+                        ("android x86_64", android_apk_patterns(Some("x86_64"))),
+                        ("android x86", android_apk_patterns(Some("x86"))),
+                    ];
+                    for (platform, must) in wanted {
+                        match newest.find_asset(&must, &[]) {
+                            Some(asset) => println!("  {platform}: {}", asset.name),
+                            None => println!("  {platform}: MISSING"),
+                        }
+                    }
                 }
             }
             Err(e) => println!("the feed could not be read: {e}"),
