@@ -9,7 +9,7 @@
   }: {
     report: UpdateReport | null;
     progress: { component: Component; downloaded: number; total: number | null } | null;
-    onrefresh: () => void;
+    onrefresh: () => Promise<void>;
   } = $props();
 
   let busy: Component | null = $state(null);
@@ -94,8 +94,8 @@
     checking = true;
     error = null;
     try {
-      onrefresh();
-      await api.checkUpdates();
+      // One round trip, not two: onrefresh is the check.
+      await onrefresh();
     } catch (e) {
       error = String(e);
     } finally {

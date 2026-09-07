@@ -141,6 +141,13 @@ impl<R: Runtime> Ytdlp<R> {
             .map_err(Into::into)
     }
 
+    /// The ABI the phone prefers — not the one this build was compiled for.
+    pub fn device_abi(&self) -> Result<DeviceAbi> {
+        self.0
+            .run_mobile_plugin("deviceAbi", ())
+            .map_err(Into::into)
+    }
+
     pub fn engine_version(&self) -> Result<EngineVersion> {
         self.0
             .run_mobile_plugin("engineVersion", ())

@@ -8,6 +8,7 @@
 
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::sync::OnceLock;
 
 use futures_util::StreamExt;
 use hyperbola_core::updates::{
@@ -436,21 +437,43 @@ fn ytdlp_asset_patterns() -> (Vec<&'static str>, Vec<&'static str>) {
 ///
 /// A release carries one APK per architecture, so "any .apk" would install
 /// the wrong one on most phones.
+/// What the phone said when asked. Set once at startup.
+static DEVICE_ABI: OnceLock<String> = OnceLock::new();
+
+/// Records the ABI the device prefers. Worth doing because the architecture
+/// this build was compiled for answers a different question: a 64-bit phone
+/// that once installed the 32-bit build reports "arm" forever after, and
+/// would keep pulling 32-bit builds with no way back.
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+pub fn remember_device_abi(abi: String) {
+    let _ = DEVICE_ABI.set(abi);
+}
+
 fn app_asset_patterns() -> Option<(Vec<&'static str>, Vec<&'static str>)> {
     if cfg!(target_os = "windows") {
         Some((vec!["setup.exe"], vec![]))
     } else if cfg!(target_os = "android") {
-        if cfg!(target_arch = "aarch64") {
-            Some((vec!["arm64", ".apk"], vec![]))
-        } else if cfg!(target_arch = "arm") {
-            Some((vec!["app-arm-", ".apk"], vec![]))
-        } else if cfg!(target_arch = "x86_64") {
-            Some((vec!["x86_64", ".apk"], vec![]))
-        } else {
-            Some((vec!["app-x86-", ".apk"], vec![]))
-        }
+        Some((
+            android_apk_patterns(DEVICE_ABI.get().map(String::as_str)),
+            vec![],
+        ))
     } else {
         None
+    }
+}
+
+/// Picks the APK for `abi`, falling back to this build's own architecture
+/// when the device did not answer.
+fn android_apk_patterns(abi: Option<&str>) -> Vec<&'static str> {
+    match abi {
+        Some("arm64-v8a") => vec!["arm64", ".apk"],
+        Some("armeabi-v7a") | Some("armeabi") => vec!["app-arm-", ".apk"],
+        Some("x86_64") => vec!["x86_64", ".apk"],
+        Some("x86") => vec!["app-x86-", ".apk"],
+        _ if cfg!(target_arch = "aarch64") => vec!["arm64", ".apk"],
+        _ if cfg!(target_arch = "arm") => vec!["app-arm-", ".apk"],
+        _ if cfg!(target_arch = "x86_64") => vec!["x86_64", ".apk"],
+        _ => vec!["app-x86-", ".apk"],
     }
 }
 
@@ -540,6 +563,33 @@ pub fn which(program: &str) -> Option<PathBuf> {
 
 #[cfg(test)]
 mod tests {
+
+    /// The release lists app-arm-release.apk before app-arm64-release.apk, so
+    /// a pattern that matches both hands a 64-bit phone the 32-bit build —
+    /// which is exactly what 0.1.0 did.
+    #[test]
+    fn the_phone_gets_the_build_its_own_abi_asked_for() {
+        let assets = [
+            "app-arm-release.apk",
+            "app-arm64-release.apk",
+            "app-x86-release.apk",
+            "app-x86_64-release.apk",
+        ];
+        let pick = |abi: Option<&str>| {
+            let must = android_apk_patterns(abi);
+            assets
+                .iter()
+                .find(|name| must.iter().all(|needle| name.contains(needle)))
+                .copied()
+        };
+
+        assert_eq!(pick(Some("arm64-v8a")), Some("app-arm64-release.apk"));
+        assert_eq!(pick(Some("armeabi-v7a")), Some("app-arm-release.apk"));
+        assert_eq!(pick(Some("x86_64")), Some("app-x86_64-release.apk"));
+        assert_eq!(pick(Some("x86")), Some("app-x86-release.apk"));
+        // An unanswered question must still pick exactly one build.
+        assert!(pick(None).is_some());
+    }
     use super::*;
 
     /// Asks the real release feed what the app would show. Network-gated:

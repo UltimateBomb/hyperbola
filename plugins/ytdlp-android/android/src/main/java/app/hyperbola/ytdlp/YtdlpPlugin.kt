@@ -467,6 +467,19 @@ class YtdlpPlugin(private val activity: Activity) : Plugin(activity) {
      * version" during startup makes the app announce that nothing can
      * download, on a phone where the engine is built in.
      */
+    /**
+     * The ABI the device prefers, which is not always the one this build was
+     * compiled for. A 64-bit phone that once installed the 32-bit build would
+     * otherwise keep downloading 32-bit builds forever: the running library
+     * would report its own architecture and never the phone's.
+     */
+    @Command
+    fun deviceAbi(invoke: Invoke) {
+        val result = JSObject()
+        result.put("abi", Build.SUPPORTED_ABIS.firstOrNull() ?: "")
+        invoke.resolve(result)
+    }
+
     @Command
     fun engineVersion(invoke: Invoke) {
         scope.launch {

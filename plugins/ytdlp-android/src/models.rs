@@ -106,6 +106,13 @@ pub struct EnginePaths {
     pub ffmpeg_dir: Option<String>,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeviceAbi {
+    /// Empty when the device did not name one.
+    pub abi: String,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ServiceRequest {

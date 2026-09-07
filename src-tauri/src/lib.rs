@@ -419,6 +419,61 @@ fn describe_dependencies(state: &AppState) -> DependencyPaths {
     }
 }
 
+/// One round of the update routine: look, tell the window what was found,
+/// and install what the settings allow. Startup and the timer run the same
+/// code, so an app left open for a day behaves like one just started.
+async fn update_round(app: &AppHandle) {
+    let (auto_check, auto_install, auto_app) = {
+        let state = app.state::<AppState>();
+        let settings = state.settings.lock().unwrap();
+        (
+            settings.auto_check_updates,
+            settings.auto_install_dependency_updates,
+            settings.auto_install_app_updates,
+        )
+    };
+    if !auto_check {
+        return;
+    }
+    let report = build_report(app).await;
+    log::info!("update check: {}", report.summary());
+    let _ = app.emit("updates-changed", report.clone());
+    if !auto_install {
+        return;
+    }
+    for status in report.actionable() {
+        if status.component == Component::App {
+            // The system asks before replacing anything, so this fetches the
+            // new version and opens that question — it does not install
+            // behind the user's back.
+            if auto_app && cfg!(target_os = "android") {
+                log::info!("fetching the new version of the app");
+                if let Err(message) = install_update(app.clone(), Component::App).await {
+                    log::error!("could not fetch the update: {message}");
+                }
+            }
+            continue;
+        }
+        let component = status.component;
+        log::info!("installing {} automatically", component.display_name());
+        let mut outcome = install_update(app.clone(), component).await;
+        if outcome.is_err() {
+            // The first attempt right after launch competes with everything
+            // else a cold start is doing; one retry turns most of these into
+            // a success the user never has to notice.
+            log::warn!("retrying {} once", component.display_name());
+            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+            outcome = install_update(app.clone(), component).await;
+        }
+        if let Err(message) = outcome {
+            // Silence here used to mean the user saw a working app that could
+            // not merge a file, with nothing to read.
+            log::error!("could not install {}: {message}", component.display_name());
+            let _ = app.emit("dependency-error", DependencyError { component, message });
+        }
+    }
+}
+
 #[tauri::command]
 async fn check_updates(app: AppHandle) -> UpdateReport {
     let report = build_report(&app).await;
@@ -876,6 +931,28 @@ pub fn run() {
                 probes: Mutex::new(HashMap::new()),
             });
 
+            // Ask the phone which ABI it wants before any update check runs,
+            // so an app that landed on the wrong build can climb back.
+            #[cfg(target_os = "android")]
+            {
+                let handle = handle.clone();
+                tauri::async_runtime::spawn(async move {
+                    use tauri_plugin_ytdlp::YtdlpExt;
+                    let abi =
+                        tauri::async_runtime::spawn_blocking(move || handle.ytdlp().device_abi())
+                            .await;
+                    match abi {
+                        Ok(Ok(abi)) if !abi.abi.is_empty() => {
+                            log::info!("device abi: {}", abi.abi);
+                            crate::deps::remember_device_abi(abi.abi);
+                        }
+                        Ok(Ok(_)) => log::warn!("the device named no abi"),
+                        Ok(Err(e)) => log::error!("could not read the device abi: {e}"),
+                        Err(e) => log::error!("could not read the device abi: {e}"),
+                    }
+                });
+            }
+
             // Android: find out where the bundled ffmpeg is before anything
             // is queued, or the first merge fails after a full download.
             #[cfg(target_os = "android")]
@@ -901,86 +978,20 @@ pub fn run() {
                 });
             }
 
-            // Look again while the app is open. Checking only at startup
-            // means a release published today is invisible to anyone who
-            // left the app running — which is most people.
-            let watcher = handle.clone();
+            // First run, or a dependency the user deleted: fetch what is
+            // missing before the user hits a confusing failure. Then keep
+            // looking while the app is open — checking only at startup means
+            // a release published today stays invisible to anyone who left
+            // the app running, which is most people.
+            let startup = handle.clone();
             tauri::async_runtime::spawn(async move {
+                update_round(&startup).await;
                 loop {
                     tokio::time::sleep(UPDATE_CHECK_INTERVAL).await;
-                    let wanted = {
-                        let state = watcher.state::<AppState>();
-                        let settings = state.settings.lock().unwrap();
-                        settings.auto_check_updates
-                    };
-                    if wanted {
-                        let _ = check_updates(watcher.clone()).await;
-                    }
+                    update_round(&startup).await;
                 }
             });
 
-            // First run, or a dependency the user deleted: fetch what is
-            // missing before the user hits a confusing failure.
-            let startup = handle.clone();
-            tauri::async_runtime::spawn(async move {
-                let (auto_check, auto_install) = {
-                    let state = startup.state::<AppState>();
-                    let settings = state.settings.lock().unwrap();
-                    (
-                        settings.auto_check_updates,
-                        settings.auto_install_dependency_updates,
-                    )
-                };
-                if !auto_check {
-                    return;
-                }
-                let report = build_report(&startup).await;
-                log::info!("update check: {}", report.summary());
-                let _ = startup.emit("updates-changed", report.clone());
-                if !auto_install {
-                    return;
-                }
-                let auto_app = {
-                    let state = startup.state::<AppState>();
-                    let settings = state.settings.lock().unwrap();
-                    settings.auto_install_app_updates
-                };
-                for status in report.actionable() {
-                    if status.component == Component::App {
-                        // The system asks before replacing anything, so this
-                        // fetches the new version and opens that question —
-                        // it does not install behind the user's back.
-                        if auto_app && cfg!(target_os = "android") {
-                            log::info!("fetching the new version of the app");
-                            if let Err(message) =
-                                install_update(startup.clone(), Component::App).await
-                            {
-                                log::error!("could not fetch the update: {message}");
-                            }
-                        }
-                        continue;
-                    }
-                    let component = status.component;
-                    log::info!("installing {} automatically", component.display_name());
-                    let mut outcome = install_update(startup.clone(), component).await;
-                    if outcome.is_err() {
-                        // The first attempt right after launch competes with
-                        // everything else a cold start is doing; one retry
-                        // turns most of these into a success the user never
-                        // has to notice.
-                        log::warn!("retrying {} once", component.display_name());
-                        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-                        outcome = install_update(startup.clone(), component).await;
-                    }
-                    if let Err(message) = outcome {
-                        // Silence here used to mean the user saw a working app
-                        // that could not merge a file, with nothing to read.
-                        log::error!("could not install {}: {message}", component.display_name());
-                        let _ = startup
-                            .emit("dependency-error", DependencyError { component, message });
-                    }
-                }
-            });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

@@ -56,24 +56,31 @@
       (event) => (dependencyProgress = event.payload),
     );
 
-    refreshUpdates();
+    refreshQuietly();
     setInterval(pollClipboard, 1200);
 
     // Look again whenever the window comes back. A release published while
     // the app sat open would otherwise stay invisible until it restarts.
     document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState === "visible") refreshUpdates();
+      if (document.visibilityState === "visible") refreshQuietly();
     });
-    window.addEventListener("focus", () => refreshUpdates());
+    window.addEventListener("focus", () => refreshQuietly());
   });
 
   const RECHECK_AFTER = 5 * 60 * 1000;
   let lastCheck = 0;
 
-  function refreshUpdates(force = false) {
+  // Returns the promise so a check started by the button can report why it
+  // failed. Swallowing it made a blocked network look identical to "you are
+  // up to date", which is the worst possible thing this screen can say.
+  async function refreshUpdates(force = false) {
     if (!force && Date.now() - lastCheck < RECHECK_AFTER) return;
     lastCheck = Date.now();
-    api.checkUpdates().then((report) => (updates = report)).catch(() => {});
+    updates = await api.checkUpdates();
+  }
+
+  function refreshQuietly() {
+    refreshUpdates().catch(() => {});
   }
 
   async function pollClipboard() {
