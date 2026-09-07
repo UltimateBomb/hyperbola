@@ -19,7 +19,7 @@
 
 | Что у вас | Берите это | Размер |
 |---|---|---|
-| **Windows** 10 или 11 | [`Hyperbola_0.1.0_x64-setup.exe`](https://github.com/UltimateBomb/hyperbola/releases/latest) | 3 МБ |
+| **Windows** 10 или 11 | [`Hyperbola_0.1.1_x64-setup.exe`](https://github.com/UltimateBomb/hyperbola/releases/latest) | 3 МБ |
 | **Телефон на Андроиде** (почти любой с 2015 года) | [`app-arm64-release.apk`](https://github.com/UltimateBomb/hyperbola/releases/latest) | 60 МБ |
 | Старый или 32-битный Андроид | `app-arm-release.apk` | 53 МБ |
 | Эмулятор или планшет на x86 | `app-x86_64-release.apk` | 63 МБ |

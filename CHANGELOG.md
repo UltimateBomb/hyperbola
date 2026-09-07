@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.1 — unreleased
+## 0.1.1 — 2026-09-07
 
 - **Playlists open.** A playlist used to fail with "could not read media
   info" and a column number: the app asked for the full details of every

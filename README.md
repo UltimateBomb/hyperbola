@@ -20,7 +20,7 @@ downloader does when a site changes.
 
 | You have | Take this | Size |
 |---|---|---|
-| **Windows** 10 or 11 | [`Hyperbola_0.1.0_x64-setup.exe`](https://github.com/UltimateBomb/hyperbola/releases/latest) | 3 MB |
+| **Windows** 10 or 11 | [`Hyperbola_0.1.1_x64-setup.exe`](https://github.com/UltimateBomb/hyperbola/releases/latest) | 3 MB |
 | **Android phone** (almost any since 2015) | [`app-arm64-release.apk`](https://github.com/UltimateBomb/hyperbola/releases/latest) | 60 MB |
 | Older or 32-bit Android | `app-arm-release.apk` | 53 MB |
 | Android emulator / x86 tablet | `app-x86_64-release.apk` | 63 MB |
