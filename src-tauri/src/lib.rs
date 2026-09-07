@@ -1057,6 +1057,12 @@ pub fn run() {
                 });
             }
 
+            // A restored queue has to be started, or it sits there. Closing
+            // the app with downloads waiting and opening it again left them
+            // waiting forever: pump only ever ran from something the user
+            // did, so nothing moved until they touched the queue by hand.
+            pump(handle.clone());
+
             // First run, or a dependency the user deleted: fetch what is
             // missing before the user hits a confusing failure. Then keep
             // looking while the app is open — checking only at startup means

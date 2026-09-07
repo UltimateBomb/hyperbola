@@ -72,8 +72,13 @@ impl Queue {
         self.items = items
             .into_iter()
             .map(|mut download| {
-                if let DownloadState::Running(progress) = download.state {
-                    download.state = DownloadState::Paused(progress);
+                // The app closing is not the user pausing. A download that
+                // was running goes back in the queue and continues on its
+                // own — yt-dlp picks up from the part file. Leaving it
+                // paused meant every interrupted download waited for a
+                // person to press play on it, one at a time.
+                if matches!(download.state, DownloadState::Running(_)) {
+                    download.state = DownloadState::Queued;
                 }
                 download
             })
@@ -449,7 +454,7 @@ mod tests {
     }
 
     #[test]
-    fn restoring_turns_running_downloads_back_into_paused_ones() {
+    fn restoring_puts_interrupted_downloads_back_in_the_queue() {
         let mut original = queue_with(3, 3);
         let running = original.start_next().unwrap();
         original.on_progress(running, progress(400, 900.0));
@@ -460,10 +465,12 @@ mod tests {
         let mut restored = Queue::new(3);
         restored.restore(saved);
 
-        match &restored.get(running).unwrap().state {
-            DownloadState::Paused(p) => assert_eq!(p.downloaded_bytes, 400),
-            other => panic!("expected paused, got {other:?}"),
-        }
+        assert!(
+            matches!(restored.get(running).unwrap().state, DownloadState::Queued),
+            "an interrupted download waits its turn again, it is not paused"
+        );
+        // And the queue will actually pick it up.
+        assert_eq!(restored.start_next(), Some(running));
         assert!(matches!(
             restored.get(completed).unwrap().state,
             DownloadState::Completed { .. }
