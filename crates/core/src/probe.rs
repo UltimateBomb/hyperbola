@@ -32,9 +32,10 @@ fn build_probe(source_url: &str, raw: RawInfo) -> MediaProbe {
             .entries
             .into_iter()
             .enumerate()
-            .map(|(index, entry)| {
+            .filter_map(|(index, value)| {
+                let entry: RawInfo = serde_json::from_value(value).ok()?;
                 let position = entry.playlist_index.unwrap_or(index as u32 + 1);
-                build_item(source_url, entry, Some(position))
+                Some(build_item(source_url, entry, Some(position)))
             })
             .collect();
         MediaProbe {
@@ -126,17 +127,22 @@ struct RawInfo {
     title: Option<String>,
     uploader: Option<String>,
     channel: Option<String>,
+    #[serde(default, deserialize_with = "lenient_f64")]
     duration: Option<f64>,
     thumbnail: Option<String>,
     webpage_url: Option<String>,
     original_url: Option<String>,
     is_live: Option<bool>,
     live_status: Option<String>,
+    #[serde(default, deserialize_with = "lenient_u32")]
     playlist_index: Option<u32>,
     #[serde(default, deserialize_with = "null_as_default")]
     formats: Vec<RawFormat>,
+    /// Kept untyped on purpose: a playlist can carry an entry that is null
+    /// or shaped unlike the rest, and one such entry must not cost the user
+    /// the whole list.
     #[serde(default, deserialize_with = "null_as_default")]
-    entries: Vec<RawInfo>,
+    entries: Vec<serde_json::Value>,
     #[serde(default, deserialize_with = "null_as_default")]
     subtitles: std::collections::BTreeMap<String, Vec<RawSubtitle>>,
     #[serde(default, deserialize_with = "null_as_default")]
@@ -147,13 +153,19 @@ struct RawInfo {
 struct RawFormat {
     format_id: Option<String>,
     ext: Option<String>,
+    #[serde(default, deserialize_with = "lenient_u32")]
     height: Option<u32>,
+    #[serde(default, deserialize_with = "lenient_u32")]
     width: Option<u32>,
+    #[serde(default, deserialize_with = "lenient_f64")]
     fps: Option<f64>,
     vcodec: Option<String>,
     acodec: Option<String>,
+    #[serde(default, deserialize_with = "lenient_u64")]
     filesize: Option<u64>,
+    #[serde(default, deserialize_with = "lenient_u64")]
     filesize_approx: Option<u64>,
+    #[serde(default, deserialize_with = "lenient_f64")]
     tbr: Option<f64>,
     format_note: Option<String>,
     protocol: Option<String>,
@@ -162,6 +174,36 @@ struct RawFormat {
 #[derive(Debug, Deserialize)]
 struct RawSubtitle {
     name: Option<String>,
+}
+
+/// Numbers do not always arrive as numbers: a size can come as a float, a
+/// height as a string. Refusing them costs the user the whole read for a
+/// field that is only ever shown as a label.
+fn lenient_number<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<f64>, D::Error> {
+    let value = Option::<serde_json::Value>::deserialize(deserializer)?;
+    Ok(match value {
+        Some(serde_json::Value::Number(n)) => n.as_f64(),
+        Some(serde_json::Value::String(s)) => s.trim().parse::<f64>().ok(),
+        _ => None,
+    })
+}
+
+fn lenient_u64<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Option<u64>, D::Error> {
+    Ok(lenient_number(deserializer)?
+        .filter(|v| v.is_finite() && *v >= 0.0)
+        .map(|v| v as u64))
+}
+
+fn lenient_u32<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Option<u32>, D::Error> {
+    Ok(lenient_number(deserializer)?
+        .filter(|v| v.is_finite() && *v >= 0.0)
+        .map(|v| v as u32))
+}
+
+fn lenient_f64<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Option<f64>, D::Error> {
+    Ok(lenient_number(deserializer)?.filter(|v| v.is_finite()))
 }
 
 /// yt-dlp writes `null` where it means "empty" for several list and map
@@ -265,6 +307,41 @@ mod tests {
         assert_eq!(probe.items[0].playlist_index, Some(1));
         // Entry without an explicit index falls back to its position.
         assert_eq!(probe.items[1].playlist_index, Some(2));
+    }
+
+    #[test]
+    fn one_broken_entry_does_not_cost_the_whole_playlist() {
+        let json = r#"{
+            "_type": "playlist", "title": "Mixed",
+            "entries": [
+                {"id": "a", "title": "Good", "playlist_index": 1},
+                null,
+                "not even an object",
+                {"id": "b", "title": "Also good"}
+            ]
+        }"#;
+        let probe = parse_probe("u", json).unwrap();
+        assert_eq!(probe.items.len(), 2);
+        assert_eq!(probe.items[0].title, "Good");
+        assert_eq!(probe.items[1].title, "Also good");
+    }
+
+    #[test]
+    fn numbers_that_arrive_as_text_or_floats_are_accepted() {
+        let json = r#"{
+            "id": "x", "title": "T", "duration": "212.5",
+            "formats": [
+                {"format_id": "1", "height": "1080", "filesize": 1.48e8, "fps": "30", "tbr": "2500.5"}
+            ]
+        }"#;
+        let probe = parse_probe("u", json).unwrap();
+        let item = &probe.items[0];
+        assert_eq!(item.duration_secs, Some(212.5));
+        let f = &item.formats[0];
+        assert_eq!(f.height, Some(1080));
+        assert_eq!(f.filesize, Some(148_000_000));
+        assert_eq!(f.fps, Some(30.0));
+        assert_eq!(f.tbr, Some(2500.5));
     }
 
     #[test]

@@ -75,6 +75,39 @@ async fn run(args: Vec<String>) -> Result<(), String> {
             }
             Ok(())
         }
+        // Reads a saved --dump-single-json through the same parser the apps
+        // use. When a link fails to read, its dump is the whole evidence.
+        "parse" => {
+            let path = args.get(1).ok_or_else(usage)?;
+            let text = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
+            match hyperbola_core::probe::parse_probe("file", &text) {
+                Ok(probe) => {
+                    println!(
+                        "{} · {} item(s)",
+                        probe.playlist_title.as_deref().unwrap_or("single media"),
+                        probe.items.len()
+                    );
+                    for item in probe.items.iter().take(5) {
+                        println!("  {} — {} format(s)", item.title, item.formats.len());
+                    }
+                    Ok(())
+                }
+                Err(e) => {
+                    // Show what sits at the position serde complained about.
+                    let message = e.to_string();
+                    if let Some(column) = message
+                        .split("column ")
+                        .nth(1)
+                        .and_then(|s| s.trim().parse::<usize>().ok())
+                    {
+                        let start = column.saturating_sub(120);
+                        let end = (column + 120).min(text.len());
+                        eprintln!("around column {column}:\n…{}…", &text[start..end]);
+                    }
+                    Err(message)
+                }
+            }
+        }
         "get" => {
             let url = args.get(1).ok_or_else(usage)?;
             let out = flag(&args, "--out")
@@ -137,7 +170,7 @@ async fn run(args: Vec<String>) -> Result<(), String> {
 }
 
 fn usage() -> String {
-    "usage:\n  hyperbola probe <url>\n  hyperbola get <url> [--audio] [--max-height N] [--out DIR]"
+    "usage:\n  hyperbola probe <url>\n  hyperbola get <url> [--audio] [--max-height N] [--out DIR]\n  hyperbola parse <file.json>"
         .to_string()
 }
 

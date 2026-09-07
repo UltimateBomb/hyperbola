@@ -56,6 +56,11 @@ pub fn build_probe_args(
         "--ignore-errors".into(),
         "--no-warnings".into(),
         "--no-colors".into(),
+        // List a playlist without opening every video in it. Without this a
+        // playlist takes minutes, and one unavailable video in the middle
+        // fails the whole read. A single video is unaffected: its formats
+        // still come back.
+        "--flat-playlist".into(),
     ];
     push_common(&mut args, cookies, proxy, env);
     args
@@ -267,6 +272,12 @@ mod tests {
     /// True when `flag` is present and immediately followed by `value`.
     fn has_pair(args: &[String], flag: &str, value: &str) -> bool {
         args.windows(2).any(|w| w[0] == flag && w[1] == value)
+    }
+
+    #[test]
+    fn a_playlist_is_listed_without_opening_every_video() {
+        let args = build_probe_args("https://x/list", &CookieSource::None, None, &env());
+        assert!(args.contains(&"--flat-playlist".to_string()));
     }
 
     #[test]

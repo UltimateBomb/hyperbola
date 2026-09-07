@@ -17,12 +17,17 @@
   let adding = $state(false);
 
   const first = $derived(probe.items[0]);
+  // A playlist is listed without opening every video in it, so the exact
+  // formats are not known yet — the usual heights are offered instead, and
+  // yt-dlp picks the best one at or below the chosen height when it starts.
+  const standardHeights = [2160, 1440, 1080, 720, 480, 360];
   const resolutions = $derived.by(() => {
     const heights = new Set<number>();
     for (const item of probe.items) {
       for (const f of item.formats) if (f.height) heights.add(f.height);
     }
-    return [...heights].sort((a, b) => b - a);
+    const found = [...heights].sort((a, b) => b - a);
+    return found.length > 0 ? found : standardHeights;
   });
   const subtitleLanguages = $derived.by(() => {
     const langs = new Map<string, string>();
