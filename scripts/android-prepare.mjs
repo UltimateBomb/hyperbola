@@ -12,6 +12,7 @@ import { readFileSync, writeFileSync, existsSync } from "node:fs";
 
 const manifestPath = "src-tauri/gen/android/app/src/main/AndroidManifest.xml";
 const gradlePath = "src-tauri/gen/android/app/build.gradle.kts";
+const filePathsPath = "src-tauri/gen/android/app/src/main/res/xml/file_paths.xml";
 
 const permissions = [
   "android.permission.INTERNET",
@@ -75,5 +76,22 @@ function patchGradle() {
   console.log(`patched ${gradlePath}`);
 }
 
+/**
+ * The app hands a downloaded update to the system installer through the
+ * FileProvider the generated project already declares — but its paths do not
+ * include the cache directory the update lands in, and a file outside them
+ * cannot be handed over at all.
+ */
+function patchFilePaths() {
+  if (!existsSync(filePathsPath)) throw new Error(`missing ${filePathsPath}`);
+  let xml = readFileSync(filePathsPath, "utf8");
+  if (!xml.includes('name="hyperbola-cache"')) {
+    xml = xml.replace("</paths>", '    <cache-path name="hyperbola-cache" path="." />\n</paths>');
+    writeFileSync(filePathsPath, xml);
+  }
+  console.log(`patched ${filePathsPath}`);
+}
+
 patchManifest();
 patchGradle();
+patchFilePaths();

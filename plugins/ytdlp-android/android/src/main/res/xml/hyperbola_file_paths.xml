@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<paths>
-    <!-- Downloaded updates live in the app's cache; the installer needs a
-         readable handle to one, which is what the provider gives it. -->
-    <cache-path name="updates" path="." />
-    <files-path name="files" path="." />
-</paths>

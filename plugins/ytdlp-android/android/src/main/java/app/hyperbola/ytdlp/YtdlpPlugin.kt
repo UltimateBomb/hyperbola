@@ -358,9 +358,11 @@ class YtdlpPlugin(private val activity: Activity) : Plugin(activity) {
             invoke.reject("allow Hyperbola to install apps, then press update again")
             return
         }
+        // The generated app already declares a FileProvider; a second one of
+        // the same class only makes the manifests refuse to merge.
         val uri = FileProvider.getUriForFile(
             activity,
-            "${activity.packageName}.hyperbola.fileprovider",
+            "${activity.packageName}.fileprovider",
             file,
         )
         val intent = Intent(Intent.ACTION_VIEW).apply {
