@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.6 — 2026-09-07
+
+- **A queue left waiting starts by itself.** Close the app with downloads
+  still to go, open it again, and nothing happened: the queue was read back
+  but never started, so it sat there until you touched something by hand.
+  Found with a forty-video playlist that stopped after four.
+- **An interrupted download continues on its own.** Being closed is not the
+  same as being paused, and every one of them used to need a press of play.
+
 ## 0.1.5 — 2026-09-07
 
 - **A cookie export works whatever shape it is in.** Extensions export
