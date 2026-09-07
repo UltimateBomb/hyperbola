@@ -9,9 +9,16 @@ core/shell architecture and yt-dlp depth) and
 neither has: **one update center** — app, yt-dlp and ffmpeg in a single list,
 with one button that brings all of them up to date.
 
+## Get it
+
+[**Release 0.1.0**](https://github.com/UltimateBomb/hyperbola/releases/latest) —
+a Windows installer and one APK per Android architecture. On a phone, take
+`app-arm64-release.apk` unless you know otherwise.
+
 ## Status
 
-Early. The engine is written and tested; the shells are being built.
+0.1.0 is out. Both apps run, keep themselves current, and have been verified
+end to end on real hardware rather than in CI alone.
 
 | Piece | State |
 |---|---|
