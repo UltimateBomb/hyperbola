@@ -131,11 +131,22 @@ pub fn evaluate(
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct UpdateReport {
     pub components: Vec<ComponentStatus>,
+    /// Unix seconds when this was put together. A report with no age looks
+    /// exactly like a fresh one, and a check that last ran yesterday is not
+    /// an answer to "is there a new version".
+    #[serde(default)]
+    pub checked_at: u64,
 }
 
 impl UpdateReport {
     pub fn new(components: Vec<ComponentStatus>) -> Self {
-        UpdateReport { components }
+        UpdateReport {
+            components,
+            checked_at: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0),
+        }
     }
 
     /// Components with something to install, critical ones first — the order

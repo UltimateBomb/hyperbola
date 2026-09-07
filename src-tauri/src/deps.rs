@@ -542,6 +542,32 @@ pub fn which(program: &str) -> Option<PathBuf> {
 mod tests {
     use super::*;
 
+    /// Asks the real release feed what the app would show. Network-gated:
+    ///
+    ///   HYPERBOLA_TEST_NETWORK=1 cargo test -p hyperbola -- --nocapture
+    #[tokio::test]
+    async fn the_release_feed_decides_what_the_update_row_shows() {
+        if std::env::var_os("HYPERBOLA_TEST_NETWORK").is_none() {
+            return;
+        }
+        let deps = Dependencies::new(std::env::temp_dir().join("hyperbola-feed-test"));
+        match deps.latest_app_version().await {
+            Ok(latest) => {
+                println!("feed says the newest release is {latest}");
+                for installed in ["0.1.0", "0.1.1", "0.2.0"] {
+                    let status = evaluate(
+                        Component::App,
+                        Some(Version::parse(installed)),
+                        Some(latest.clone()),
+                        None,
+                    );
+                    println!("  installed {installed} -> {:?}", status.state);
+                }
+            }
+            Err(e) => println!("the feed could not be read: {e}"),
+        }
+    }
+
     /// Runs the extractor against a real BtbN archive when one is available:
     ///
     ///   HYPERBOLA_TEST_ZIP=/path/to/ffmpeg-master-latest-win64-gpl.zip cargo test -p hyperbola

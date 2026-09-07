@@ -39,6 +39,14 @@
     ffmpeg: "Merging, audio extraction and cutting.",
   };
 
+  const checkedAgo = $derived.by(() => {
+    if (!report?.checked_at) return "";
+    const seconds = Math.max(0, Math.floor(Date.now() / 1000) - report.checked_at);
+    if (seconds < 90) return "checked just now";
+    if (seconds < 3600) return `checked ${Math.round(seconds / 60)} min ago`;
+    return `checked ${Math.round(seconds / 3600)} h ago`;
+  });
+
   const actionable = $derived(
     (report?.components ?? []).filter(
       (c) => c.state.state === "update_available" || c.state.state === "missing",
@@ -107,6 +115,7 @@
     </span>
   </header>
 
+  {#if checkedAgo}<p class="muted small">{checkedAgo}</p>{/if}
   {#if error}<p class="pill err">{error}</p>{/if}
 
   {#each report?.components ?? [] as status (status.component)}

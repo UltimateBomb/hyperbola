@@ -131,6 +131,8 @@ export interface ComponentStatus {
 
 export interface UpdateReport {
   components: ComponentStatus[];
+  /** Unix seconds — a report with no age looks exactly like a fresh one. */
+  checked_at: number;
 }
 
 export interface AddRequest {

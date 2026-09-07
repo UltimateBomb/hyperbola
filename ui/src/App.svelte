@@ -36,6 +36,9 @@
       (c) => c.state.state === "update_available" || c.state.state === "missing",
     ),
   );
+  const uncheckable = $derived(
+    (updates?.components ?? []).filter((c) => c.state.state === "unknown"),
+  );
   const ytdlpMissing = $derived(
     (updates?.components ?? []).some((c) => c.component === "yt_dlp" && c.state.state === "missing"),
   );
@@ -53,9 +56,25 @@
       (event) => (dependencyProgress = event.payload),
     );
 
-    api.checkUpdates().then((report) => (updates = report)).catch(() => {});
+    refreshUpdates();
     setInterval(pollClipboard, 1200);
+
+    // Look again whenever the window comes back. A release published while
+    // the app sat open would otherwise stay invisible until it restarts.
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") refreshUpdates();
+    });
+    window.addEventListener("focus", () => refreshUpdates());
   });
+
+  const RECHECK_AFTER = 5 * 60 * 1000;
+  let lastCheck = 0;
+
+  function refreshUpdates(force = false) {
+    if (!force && Date.now() - lastCheck < RECHECK_AFTER) return;
+    lastCheck = Date.now();
+    api.checkUpdates().then((report) => (updates = report)).catch(() => {});
+  }
 
   async function pollClipboard() {
     if (!settings?.watch_clipboard) return;
@@ -113,6 +132,10 @@
       {#if pendingUpdates.length > 0}
         <button class="pill warn" onclick={() => (panel = "updates")}>
           {pendingUpdates.length} update{pendingUpdates.length > 1 ? "s" : ""}
+        </button>
+      {:else if uncheckable.length > 0}
+        <button class="pill" onclick={() => (panel = "updates")} title="The check could not run">
+          check failed
         </button>
       {/if}
       <button class="ghost" onclick={() => (panel = panel === "updates" ? "none" : "updates")}>Updates</button>
@@ -186,7 +209,7 @@
       <UpdatesPanel
         report={updates}
         progress={dependencyProgress}
-        onrefresh={() => api.checkUpdates().then((r) => (updates = r)).catch(() => {})}
+        onrefresh={() => refreshUpdates(true)}
       />
     {:else if panel === "settings" && settings}
       <SettingsPanel {settings} onchange={(s) => (settings = s)} />

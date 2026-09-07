@@ -238,6 +238,9 @@ fn signal_cancel(app: &AppHandle, id: DownloadId) {
 /// How long a read stays fresh enough to reuse.
 const PROBE_CACHE: Duration = Duration::from_secs(600);
 
+/// How often the app looks for a new version while it is open.
+const UPDATE_CHECK_INTERVAL: Duration = Duration::from_secs(60 * 60);
+
 #[tauri::command]
 async fn probe_url(app: AppHandle, url: String) -> Result<MediaProbe, String> {
     let url = url.trim().to_string();
@@ -897,6 +900,24 @@ pub fn run() {
                     }
                 });
             }
+
+            // Look again while the app is open. Checking only at startup
+            // means a release published today is invisible to anyone who
+            // left the app running — which is most people.
+            let watcher = handle.clone();
+            tauri::async_runtime::spawn(async move {
+                loop {
+                    tokio::time::sleep(UPDATE_CHECK_INTERVAL).await;
+                    let wanted = {
+                        let state = watcher.state::<AppState>();
+                        let settings = state.settings.lock().unwrap();
+                        settings.auto_check_updates
+                    };
+                    if wanted {
+                        let _ = check_updates(watcher.clone()).await;
+                    }
+                }
+            });
 
             // First run, or a dependency the user deleted: fetch what is
             // missing before the user hits a confusing failure.
