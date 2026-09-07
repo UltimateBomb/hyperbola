@@ -239,6 +239,9 @@ fn signal_cancel(app: &AppHandle, id: DownloadId) {
 const PROBE_CACHE: Duration = Duration::from_secs(600);
 
 /// How often the app looks for a new version while it is open.
+/// How often a running download may tell the window how far it has got.
+const PROGRESS_INTERVAL: Duration = Duration::from_millis(200);
+
 const UPDATE_CHECK_INTERVAL: Duration = Duration::from_secs(60 * 60);
 
 #[tauri::command]
@@ -607,7 +610,21 @@ async fn install_update(app: AppHandle, component: Component) -> Result<String, 
         settings.ytdlp_channel
     };
     let handle = app.clone();
+    // One event per network chunk is thousands per second, each crossing the
+    // bridge into the webview. On a phone that bridge, not the network, then
+    // decides how fast the file arrives: the APK crawled at 50 KB/s while
+    // curl on the same phone, on the same Wi-Fi, pulled 2 MB/s. The queue
+    // has always throttled its progress for the same reason.
+    let last_emit = std::sync::Mutex::new(Instant::now() - PROGRESS_INTERVAL);
     let progress = move |downloaded: u64, total: Option<u64>| {
+        let finished = total == Some(downloaded);
+        {
+            let mut last = last_emit.lock().unwrap();
+            if !finished && last.elapsed() < PROGRESS_INTERVAL {
+                return;
+            }
+            *last = Instant::now();
+        }
         let _ = handle.emit(
             "dependency-progress",
             DependencyProgress {
