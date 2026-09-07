@@ -229,11 +229,19 @@ impl Queue {
     }
 
     /// Drops completed and canceled entries, keeping failures visible.
+    /// Removes everything that is over: finished, cancelled and failed.
+    ///
+    /// A failed download is finished too — it will not change on its own. A
+    /// batch that goes wrong leaves as many dead rows as it had videos, and
+    /// dismissing forty of them one at a time is not a thing to ask of
+    /// anyone. Retry stays available until the button is pressed.
     pub fn clear_finished(&mut self) {
         self.items.retain(|d| {
             !matches!(
                 d.state,
-                DownloadState::Completed { .. } | DownloadState::Canceled
+                DownloadState::Completed { .. }
+                    | DownloadState::Canceled
+                    | DownloadState::Failed { .. }
             )
         });
     }
@@ -425,7 +433,7 @@ mod tests {
     }
 
     #[test]
-    fn clearing_finished_keeps_failures_visible() {
+    fn clearing_finished_leaves_only_what_is_still_going() {
         let mut queue = queue_with(3, 3);
         let a = queue.start_next().unwrap();
         let b = queue.start_next().unwrap();
@@ -433,10 +441,11 @@ mod tests {
         queue.on_completed(a, "/out/a.mp4");
         queue.cancel(b);
         queue.on_failed(c, "Video unavailable", false);
+        let waiting = queue.add(DownloadOptions::video("https://x/d", "/out"), "d");
 
         queue.clear_finished();
         assert_eq!(queue.items().len(), 1);
-        assert_eq!(queue.items()[0].id, c);
+        assert_eq!(queue.items()[0].id, waiting);
     }
 
     #[test]
