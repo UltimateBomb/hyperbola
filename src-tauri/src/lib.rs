@@ -242,6 +242,9 @@ const PROBE_CACHE: Duration = Duration::from_secs(600);
 /// How often a running download may tell the window how far it has got.
 const PROGRESS_INTERVAL: Duration = Duration::from_millis(200);
 
+/// How soon to ask again after a check that could not reach the network.
+const UPDATE_RETRY_INTERVAL: Duration = Duration::from_secs(60);
+
 const UPDATE_CHECK_INTERVAL: Duration = Duration::from_secs(60 * 60);
 
 #[tauri::command]
@@ -425,7 +428,8 @@ fn describe_dependencies(state: &AppState) -> DependencyPaths {
 /// One round of the update routine: look, tell the window what was found,
 /// and install what the settings allow. Startup and the timer run the same
 /// code, so an app left open for a day behaves like one just started.
-async fn update_round(app: &AppHandle) {
+/// Returns whether every component actually got an answer.
+async fn update_round(app: &AppHandle) -> bool {
     let (auto_check, auto_install, auto_app) = {
         let state = app.state::<AppState>();
         let settings = state.settings.lock().unwrap();
@@ -436,13 +440,19 @@ async fn update_round(app: &AppHandle) {
         )
     };
     if !auto_check {
-        return;
+        return true;
     }
     let report = build_report(app).await;
     log::info!("update check: {}", report.summary());
     let _ = app.emit("updates-changed", report.clone());
+    let answered = !report.components.iter().any(|c| {
+        matches!(
+            c.state,
+            hyperbola_core::updates::UpdateState::Unknown { .. }
+        )
+    });
     if !auto_install {
-        return;
+        return answered;
     }
     for status in report.actionable() {
         if status.component == Component::App {
@@ -475,6 +485,7 @@ async fn update_round(app: &AppHandle) {
             let _ = app.emit("dependency-error", DependencyError { component, message });
         }
     }
+    answered
 }
 
 #[tauri::command]
@@ -1002,10 +1013,18 @@ pub fn run() {
             // the app running, which is most people.
             let startup = handle.clone();
             tauri::async_runtime::spawn(async move {
-                update_round(&startup).await;
                 loop {
-                    tokio::time::sleep(UPDATE_CHECK_INTERVAL).await;
-                    update_round(&startup).await;
+                    // The first check runs while a phone is still waking its
+                    // network up, or a VPN is still reconnecting, and fails
+                    // for no reason of ours. Waiting a full hour after that
+                    // leaves the app silent about a release it simply never
+                    // managed to ask about.
+                    let delay = if update_round(&startup).await {
+                        UPDATE_CHECK_INTERVAL
+                    } else {
+                        UPDATE_RETRY_INTERVAL
+                    };
+                    tokio::time::sleep(delay).await;
                 }
             });
 
