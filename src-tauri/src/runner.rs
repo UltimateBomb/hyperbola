@@ -34,7 +34,15 @@ const EMIT_INTERVAL: Duration = Duration::from_millis(200);
 #[cfg(not(target_os = "android"))]
 fn build_runner(
     app: &AppHandle,
-) -> Result<(Runner, hyperbola_core::domain::CookieSource, Option<String>), String> {
+) -> Result<
+    (
+        Runner,
+        hyperbola_core::domain::CookieSource,
+        Option<String>,
+        Vec<String>,
+    ),
+    String,
+> {
     let state = app.state::<AppState>();
     let ytdlp = state
         .deps
@@ -46,14 +54,15 @@ fn build_runner(
         Runner::new(ytdlp, env),
         settings.cookies.clone(),
         settings.proxy.clone(),
+        settings.extra_args.clone(),
     ))
 }
 
 /// Reads a URL's metadata without downloading anything.
 #[cfg(not(target_os = "android"))]
 pub async fn probe(app: &AppHandle, url: &str) -> Result<MediaProbe, String> {
-    let (runner, cookies, proxy) = build_runner(app)?;
-    runner.probe(url, &cookies, proxy.as_deref()).await
+    let (runner, cookies, proxy, extra) = build_runner(app)?;
+    runner.probe(url, &cookies, proxy.as_deref(), &extra).await
 }
 
 /// Runs one download to completion, feeding every event back into the queue.
@@ -65,7 +74,7 @@ pub async fn run(
     cancel: oneshot::Receiver<()>,
 ) {
     let runner = match build_runner(&app) {
-        Ok((runner, _, _)) => runner,
+        Ok((runner, _, _, _)) => runner,
         Err(message) => {
             finish_failed(&app, id, message, false);
             return;
@@ -142,7 +151,13 @@ pub async fn probe(app: &AppHandle, url: &str) -> Result<MediaProbe, String> {
         let state = app.state::<AppState>();
         let settings = state.settings.lock().unwrap();
         let env = state.runner_env(&settings);
-        build_probe_args(url, &settings.cookies, settings.proxy.as_deref(), &env)
+        build_probe_args(
+            url,
+            &settings.cookies,
+            settings.proxy.as_deref(),
+            &settings.extra_args,
+            &env,
+        )
     };
     let handle = app.clone();
     let url_owned = url.to_string();

@@ -45,7 +45,7 @@ async fn run(args: Vec<String>) -> Result<(), String> {
     match command {
         "probe" => {
             let url = args.get(1).ok_or_else(usage)?;
-            let probe = runner.probe(url, &CookieSource::None, None).await?;
+            let probe = runner.probe(url, &CookieSource::None, None, &[]).await?;
             if let Some(playlist) = &probe.playlist_title {
                 println!("playlist: {playlist} ({} items)", probe.items.len());
             }

@@ -141,6 +141,13 @@ impl<R: Runtime> Ytdlp<R> {
             .map_err(Into::into)
     }
 
+    /// Asks the user for a cookies file and copies it somewhere readable.
+    pub fn pick_cookies_file(&self) -> Result<PickedFile> {
+        self.0
+            .run_mobile_plugin("pickCookiesFile", ())
+            .map_err(Into::into)
+    }
+
     /// The ABI the phone prefers — not the one this build was compiled for.
     pub fn device_abi(&self) -> Result<DeviceAbi> {
         self.0

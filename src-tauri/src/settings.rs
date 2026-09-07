@@ -24,6 +24,13 @@ pub struct Settings {
     pub speed_limit_kbps: Option<u64>,
     pub cookies: CookieSource,
     pub proxy: Option<String>,
+    /// Extra yt-dlp arguments, appended to every probe and download.
+    ///
+    /// A site sometimes needs one specific flag that no setting will ever
+    /// cover — and when it does, waiting for a new build is the difference
+    /// between a working download today and none at all.
+    #[serde(default)]
+    pub extra_args: Vec<String>,
     /// Which yt-dlp stream to follow. Nightly carries extractor fixes days
     /// before stable, which matters when a site breaks.
     pub ytdlp_channel: Channel,
@@ -60,6 +67,7 @@ impl Default for Settings {
             remove_sponsor_segments: false,
             speed_limit_kbps: None,
             cookies: CookieSource::None,
+            extra_args: Vec::new(),
             proxy: None,
             ytdlp_channel: Channel::Stable,
             auto_check_updates: true,

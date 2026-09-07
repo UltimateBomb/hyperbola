@@ -512,6 +512,45 @@ class YtdlpPlugin(private val activity: Activity) : Plugin(activity) {
         }
     }
 
+    /**
+     * Lets the user hand over a cookies file. There is no browser cookie
+     * database an app can read on Android, so this is the only way a login
+     * wall can be answered here at all.
+     */
+    @Command
+    fun pickCookiesFile(invoke: Invoke) {
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "*/*"
+        }
+        startActivityForResult(invoke, intent, "cookiesFilePicked")
+    }
+
+    @ActivityCallback
+    fun cookiesFilePicked(invoke: Invoke, result: ActivityResult) {
+        val uri = result.data?.data
+        val response = JSObject()
+        if (uri == null) {
+            response.put("path", null)
+            invoke.resolve(response)
+            return
+        }
+        try {
+            // The engine is given a path, and a content URI is not one. The
+            // file is small; copying it once is simpler than teaching every
+            // layer below about the document API.
+            val target = File(activity.filesDir, "cookies.txt")
+            activity.contentResolver.openInputStream(uri).use { input ->
+                if (input == null) throw IllegalStateException("the file could not be opened")
+                target.outputStream().use { output -> input.copyTo(output) }
+            }
+            response.put("path", target.absolutePath)
+            invoke.resolve(response)
+        } catch (e: Exception) {
+            invoke.reject(describe(e, "could not read that file"))
+        }
+    }
+
     @Command
     fun pickOutputFolder(invoke: Invoke) {
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {

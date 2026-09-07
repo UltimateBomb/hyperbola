@@ -9,7 +9,9 @@
 
   const browsers = ["", "brave", "chrome", "chromium", "edge", "firefox", "opera", "safari", "vivaldi"];
   let cookieBrowser = $state(draft.cookies.source === "browser" ? draft.cookies.value : "");
+  let cookieFile = $state(draft.cookies.source === "file" ? String(draft.cookies.value) : "");
   let subtitleText = $state(draft.subtitle_languages.join(", "));
+  let extraArgsText = $state((draft.extra_args ?? []).join(" "));
 
   let platform = $state("");
   $effect(() => {
@@ -28,8 +30,30 @@
     if (typeof chosen === "string") draft.download_dir = chosen;
   }
 
+  async function pickCookies() {
+    const chosen =
+      platform === "android"
+        ? await api.pickCookiesFile()
+        : await open({
+            multiple: false,
+            filters: [{ name: "Cookies", extensions: ["txt"] }],
+          });
+    if (typeof chosen === "string" && chosen) cookieFile = chosen;
+  }
+
   async function save() {
-    draft.cookies = cookieBrowser ? { source: "browser", value: cookieBrowser } : { source: "none" };
+    // A chosen file wins: it is the deliberate answer to a login wall, and
+    // on Android it is the only one that exists.
+    draft.cookies = cookieFile
+      ? { source: "file", value: cookieFile }
+      : cookieBrowser
+        ? { source: "browser", value: cookieBrowser }
+        : { source: "none" };
+    // Split on spaces, keeping quoted groups whole, so a value with a space
+    // in it survives.
+    draft.extra_args = (extraArgsText.match(/"[^"]*"|\S+/g) ?? []).map((a) =>
+      a.replace(/^"|"$/g, ""),
+    );
     draft.subtitle_languages = subtitleText
       .split(",")
       .map((s) => s.trim())
@@ -79,11 +103,43 @@
       <span class="label muted">Subtitle languages</span>
       <input type="text" bind:value={subtitleText} placeholder="en, ru" />
     </label>
+    {#if platform !== "android"}
+      <label class="field">
+        <span class="label muted">Cookies from browser</span>
+        <select bind:value={cookieBrowser} disabled={!!cookieFile}>
+          {#each browsers as b}<option value={b}>{b || "none"}</option>{/each}
+        </select>
+      </label>
+    {/if}
+    <div class="field">
+      <span class="label muted">Cookies file</span>
+      <div class="row gap">
+        <button class="ghost" onclick={pickCookies}>
+          {cookieFile ? "Change…" : "Choose…"}
+        </button>
+        {#if cookieFile}
+          <button class="ghost" onclick={() => (cookieFile = "")}>Clear</button>
+        {/if}
+      </div>
+      <p class="muted small">
+        {#if cookieFile}
+          {cookieFile}
+        {:else if platform === "android"}
+          When a site answers "sign in to confirm you're not a bot", export
+          cookies.txt from a browser where you are signed in and pick it here.
+          Android has no browser cookies an app can read.
+        {:else}
+          A cookies.txt exported from your browser. More reliable than reading
+          the browser directly, which recent Chrome and Brave versions encrypt.
+        {/if}
+      </p>
+    </div>
     <label class="field">
-      <span class="label muted">Cookies from browser</span>
-      <select bind:value={cookieBrowser}>
-        {#each browsers as b}<option value={b}>{b || "none"}</option>{/each}
-      </select>
+      <span class="label muted">Extra yt-dlp arguments</span>
+      <input type="text" bind:value={extraArgsText} placeholder="--extractor-args youtube:player_client=tv" />
+      <p class="muted small">
+        Passed to every read and download. For when one site needs one flag.
+      </p>
     </label>
     <label class="field">
       <span class="label muted">Proxy</span>

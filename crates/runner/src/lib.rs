@@ -103,8 +103,9 @@ impl Runner {
         url: &str,
         cookies: &CookieSource,
         proxy: Option<&str>,
+        extra: &[String],
     ) -> Result<MediaProbe, String> {
-        let args = build_probe_args(url, cookies, proxy, &self.env);
+        let args = build_probe_args(url, cookies, proxy, extra, &self.env);
         let output = self
             .command()
             .args(&args)

@@ -108,6 +108,13 @@ pub struct EnginePaths {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct PickedFile {
+    /// Absolute path of the copy the app can read, or `None` if cancelled.
+    pub path: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DeviceAbi {
     /// Empty when the device did not name one.
     pub abi: String,

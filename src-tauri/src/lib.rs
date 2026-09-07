@@ -99,7 +99,7 @@ impl AddRequest {
             cookies: settings.cookies.clone(),
             proxy: settings.proxy.clone(),
             prefer_compatible: settings.prefer_compatible,
-            extra_args: Vec::new(),
+            extra_args: settings.extra_args.clone(),
         };
         (options, title)
     }
@@ -872,6 +872,28 @@ fn app_platform() -> &'static str {
 
 /// Android's folder picker. The system remembers the grant, so this is asked
 /// once and the answer survives restarts.
+/// Takes a cookies file from the user on Android, where the desktop file
+/// dialog does not exist and no browser cookie database can be read.
+#[tauri::command]
+async fn pick_cookies_file(app: AppHandle) -> Result<Option<String>, String> {
+    #[cfg(target_os = "android")]
+    {
+        use tauri_plugin_ytdlp::YtdlpExt;
+        let handle = app.clone();
+        let picked =
+            tauri::async_runtime::spawn_blocking(move || handle.ytdlp().pick_cookies_file())
+                .await
+                .map_err(|e| e.to_string())?
+                .map_err(|e| e.to_string())?;
+        Ok(picked.path)
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = app;
+        Err("this platform uses the system file dialog".to_string())
+    }
+}
+
 #[tauri::command]
 async fn pick_output_folder(app: AppHandle) -> Result<Option<String>, String> {
     #[cfg(target_os = "android")]
@@ -1048,6 +1070,7 @@ pub fn run() {
             app_version,
             app_platform,
             pick_output_folder,
+            pick_cookies_file,
             open_download,
             share_download,
             failure_advice,

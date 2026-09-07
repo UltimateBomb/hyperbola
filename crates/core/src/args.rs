@@ -46,6 +46,7 @@ pub fn build_probe_args(
     url: &str,
     cookies: &CookieSource,
     proxy: Option<&str>,
+    extra: &[String],
     env: &RunnerEnv,
 ) -> Vec<String> {
     let mut args = vec![
@@ -63,6 +64,9 @@ pub fn build_probe_args(
         "--flat-playlist".into(),
     ];
     push_common(&mut args, cookies, proxy, env);
+    // Whatever answers for the download has to answer for the read as well,
+    // or a link opens and then refuses to download.
+    args.extend(extra.iter().cloned());
     args
 }
 
@@ -281,7 +285,7 @@ mod tests {
 
     #[test]
     fn a_playlist_is_listed_without_opening_every_video() {
-        let args = build_probe_args("https://x/list", &CookieSource::None, None, &env());
+        let args = build_probe_args("https://x/list", &CookieSource::None, None, &[], &env());
         assert!(args.contains(&"--flat-playlist".to_string()));
     }
 
@@ -290,7 +294,7 @@ mod tests {
         let options = DownloadOptions::video("https://x/y", "/out");
         assert!(build_download_args(&options, &env()).contains(&"--ignore-config".to_string()));
         assert!(
-            build_probe_args("https://x/y", &CookieSource::None, None, &env())
+            build_probe_args("https://x/y", &CookieSource::None, None, &[], &env())
                 .contains(&"--ignore-config".to_string())
         );
     }
@@ -468,6 +472,25 @@ mod tests {
         options.extra_args = vec!["--force-ipv4".into()];
         let args = build_download_args(&options, &env());
         assert_eq!(args.last().unwrap(), "--force-ipv4");
+    }
+
+    /// The read has to carry them too: a flag that lets a site be downloaded
+    /// but not opened leaves the user with a link that will not analyse.
+    #[test]
+    fn extra_arguments_reach_the_read_as_well() {
+        let extra = vec![
+            "--extractor-args".to_string(),
+            "youtube:player_client=tv".to_string(),
+        ];
+        let args = build_probe_args(
+            "https://example.com/v",
+            &CookieSource::None,
+            None,
+            &extra,
+            &RunnerEnv::default(),
+        );
+        let joined = args.join(" ");
+        assert!(joined.ends_with("--extractor-args youtube:player_client=tv"));
     }
 
     #[test]

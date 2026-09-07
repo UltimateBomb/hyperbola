@@ -108,6 +108,7 @@ export interface Settings {
   speed_limit_kbps: number | null;
   cookies: CookieSource;
   proxy: string | null;
+  extra_args: string[];
   ytdlp_channel: Channel;
   auto_check_updates: boolean;
   auto_install_dependency_updates: boolean;
@@ -169,6 +170,7 @@ export const api = {
   appVersion: () => invoke<string>("app_version"),
   platform: () => invoke<string>("app_platform"),
   pickOutputFolder: () => invoke<string | null>("pick_output_folder"),
+  pickCookiesFile: () => invoke<string | null>("pick_cookies_file"),
   openDownload: (id: number) => invoke<void>("open_download", { id }),
   shareDownload: (id: number) => invoke<void>("share_download", { id }),
   failureAdvice: (message: string) => invoke<string | null>("failure_advice", { message }),
