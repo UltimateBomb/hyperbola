@@ -53,6 +53,8 @@ fn build_probe(source_url: &str, raw: RawInfo) -> MediaProbe {
 }
 
 fn build_item(source_url: &str, raw: RawInfo, playlist_index: Option<u32>) -> MediaItem {
+    let is_flat_entry = raw.kind.as_deref() == Some("url");
+    let flat_entry_url = raw.url.clone();
     let formats = raw.formats.into_iter().map(build_format).collect();
     let mut subtitles: Vec<SubtitleTrack> = raw
         .subtitles
@@ -82,6 +84,14 @@ fn build_item(source_url: &str, raw: RawInfo, playlist_index: Option<u32>) -> Me
         url: raw
             .webpage_url
             .or(raw.original_url)
+            // A flat playlist entry carries neither, only `url`. Without this
+            // every entry fell back to the playlist address, so asking for
+            // forty videos queued the same playlist forty times: each one
+            // re-read the whole list, then downloaded its first video. What
+            // the user saw was every row stuck on "Reading media info", and
+            // then a wall of sign-in errors — forty identical requests from
+            // one address is what a bot looks like.
+            .or_else(|| flat_entry_url.filter(|_| is_flat_entry))
             .unwrap_or_else(|| source_url.to_string()),
         id: raw.id.unwrap_or_default(),
         title: raw.title.unwrap_or_else(|| "Untitled".to_string()),
@@ -132,6 +142,10 @@ struct RawInfo {
     thumbnail: Option<String>,
     webpage_url: Option<String>,
     original_url: Option<String>,
+    /// For a full info dump this is the media stream itself and must never be
+    /// treated as a page; for a flat playlist entry (`_type: "url"`) it is the
+    /// only place the video's own address appears.
+    url: Option<String>,
     is_live: Option<bool>,
     live_status: Option<String>,
     #[serde(default, deserialize_with = "lenient_u32")]
@@ -219,6 +233,54 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The shape `--flat-playlist` actually returns: no webpage_url anywhere,
+    /// the video's address only in `url`. Falling back to the playlist here
+    /// meant every selected video queued the playlist instead of itself.
+    #[test]
+    fn every_playlist_entry_keeps_its_own_address() {
+        let json = r#"{
+          "_type": "playlist",
+          "title": "2026 Total Solar Eclipse",
+          "entries": [
+            {"_type": "url", "ie_key": "Youtube", "id": "29ixFQIGZaY",
+             "url": "https://www.youtube.com/watch?v=29ixFQIGZaY",
+             "title": "Official NASA Trailer", "duration": 45.0},
+            {"_type": "url", "ie_key": "Youtube", "id": "Q5_BtWc-G7Y",
+             "url": "https://www.youtube.com/watch?v=Q5_BtWc-G7Y",
+             "title": "Chasing Solar Eclipses", "duration": 112.0}
+          ]
+        }"#;
+        let probe = parse_probe("https://www.youtube.com/playlist?list=PLb911ot23pTQ", json)
+            .expect("a flat playlist must parse");
+        let urls: Vec<&str> = probe.items.iter().map(|i| i.url.as_str()).collect();
+        assert_eq!(
+            urls,
+            [
+                "https://www.youtube.com/watch?v=29ixFQIGZaY",
+                "https://www.youtube.com/watch?v=Q5_BtWc-G7Y"
+            ]
+        );
+        assert!(!urls.iter().any(|u| u.contains("playlist?list=")));
+    }
+
+    /// The same field on a full info dump is the media stream, which must
+    /// never end up in the queue as if it were a page: it expires.
+    #[test]
+    fn a_single_video_never_queues_its_stream_address() {
+        let json = r#"{
+          "id": "dQw4w9WgXcQ",
+          "title": "One video",
+          "webpage_url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+          "url": "https://rr3---sn-abc.googlevideo.com/videoplayback?expire=1",
+          "formats": []
+        }"#;
+        let probe = parse_probe("https://www.youtube.com/watch?v=dQw4w9WgXcQ", json).unwrap();
+        assert_eq!(
+            probe.items[0].url,
+            "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+        );
+    }
 
     const SINGLE_VIDEO: &str = r#"{
         "id": "dQw4w9WgXcQ",

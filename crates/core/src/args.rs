@@ -71,6 +71,11 @@ pub fn build_download_args(options: &DownloadOptions, env: &RunnerEnv) -> Vec<St
     let mut args = vec![
         options.url.clone(),
         "--ignore-config".into(),
+        // One row of the queue is one video. The list was resolved when the
+        // link was read, and each row holds an address of its own; if one
+        // ever turns out to be a playlist anyway, downloading all of it here
+        // would put the wrong file under the wrong title.
+        "--no-playlist".into(),
         "--newline".into(),
         "--no-colors".into(),
         "--progress".into(),

@@ -11,7 +11,14 @@
 /// user's time and buries the real reason under three identical errors.
 pub fn is_retryable(message: &str) -> bool {
     let text = message.to_ascii_lowercase();
-    const PERMANENT: [&str; 9] = [
+    const PERMANENT: [&str; 11] = [
+        // A login wall does not go away by asking again, and asking again is
+        // what made it appear: three attempts per video, across a whole
+        // playlist, is a burst of identical requests from one address. The
+        // second and third attempts can only deepen the block and bury the
+        // one sentence that tells the user what happened.
+        "sign in to confirm",
+        "not a bot",
         "video unavailable",
         "private video",
         "removed by the uploader",
@@ -46,6 +53,16 @@ mod tests {
         ));
         assert!(!is_retryable("Requested format is not available"));
         assert!(!is_retryable("HTTP Error 404: Not Found"));
+    }
+
+    /// The real message uses a typographic apostrophe, so the rule must not
+    /// depend on matching "you're".
+    #[test]
+    fn a_login_wall_is_not_retried() {
+        assert!(!is_retryable(
+            "[youtube] Q5_BtWc-G7Y: Sign in to confirm you\u{2019}re not a bot. \
+             Use --cookies-from-browser or --cookies for the authentication."
+        ));
     }
 
     #[test]

@@ -51,6 +51,9 @@ async fn run(args: Vec<String>) -> Result<(), String> {
             }
             for item in &probe.items {
                 println!("\n{}", item.title);
+                // What goes in the queue. A playlist whose entries all show
+                // the playlist's own address is the bug this line exposes.
+                println!("  url      {}", item.url);
                 println!(
                     "  by       {}",
                     item.uploader.as_deref().unwrap_or("unknown")
