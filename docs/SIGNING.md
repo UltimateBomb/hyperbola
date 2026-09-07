@@ -26,8 +26,30 @@ If the keystore is lost, no future build can update an installed app: every
 user has to uninstall and start over, losing their queue and settings. It
 cannot be regenerated — a key with the same name is still a different key.
 
-Back it up wherever the important things are kept. Two copies, one of them
-not on this machine.
+It is kept in three places, each verified byte for byte against the same
+checksum:
+
+| Machine | Path |
+|---|---|
+| the Mac that made it | `~/Documents/hyperbola-signing/` |
+| the server | `~/secrets/hyperbola/` |
+| the Windows machine | `D:\secrets\hyperbola\` |
+
+Each copy carries a plain note next to it explaining what the files are, for
+whoever finds the folder without this document.
+
+**The GitHub secret is not a backup.** A secret cannot be read back out; it
+is the copy CI signs with, nothing more.
+
+## Checking that a keystore is the right one
+
+    openssl pkcs12 -in hyperbola.p12 -nokeys -passin file:password.txt \
+      | openssl x509 -noout -fingerprint -sha256
+
+It must print the fingerprint below. CI prints the same value while signing,
+as `Signer #1 certificate SHA-256 digest`.
+
+- keystore SHA-256: `0198e87eeb2b00b775468c64b1c2bd1e6d9a3f994cbad0222085a4ce3f3128a9`
 
 ## Facts about the current key
 
