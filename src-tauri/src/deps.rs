@@ -46,6 +46,11 @@ impl Dependencies {
             bin_dir,
             http: reqwest::Client::builder()
                 .user_agent(USER_AGENT)
+                // No overall timeout: the same client fetches a 170 MB
+                // ffmpeg. Only the connection is bounded, so a network that
+                // swallows packets — a VPN routing badly, a captive Wi-Fi —
+                // fails with something to read instead of hanging.
+                .connect_timeout(std::time::Duration::from_secs(15))
                 .build()
                 .unwrap_or_default(),
         }
@@ -128,6 +133,10 @@ impl Dependencies {
             .http
             .get(&url)
             .header("Accept", "application/vnd.github+json")
+            // A version list is a few kilobytes. If it has not arrived in
+            // half a minute it is not going to, and the user is watching a
+            // button that says "Checking…".
+            .timeout(std::time::Duration::from_secs(30))
             .send()
             .await
             .map_err(|e| e.to_string())?;
@@ -155,10 +164,26 @@ impl Dependencies {
             .ok_or_else(|| "no yt-dlp release found".to_string())
     }
 
-    /// Newest published version of Hyperbola itself.
+    /// Newest published version of Hyperbola that this machine can actually
+    /// install.
+    ///
+    /// A release is created by the first build job to finish and the rest of
+    /// the builds attach their files afterwards, so for a few minutes the
+    /// newest release carries no APK. Offering an update that cannot be
+    /// downloaded is worse than offering none: the button fails and the user
+    /// has no way to tell whether it is them or us. A release with nothing
+    /// for this platform is simply not an update here — and becomes one, on
+    /// its own, once the file lands.
     pub async fn latest_app_version(&self) -> Result<Version, String> {
         let releases = self.releases(APP_REPO).await?;
-        latest_release(&releases, Channel::Stable)
+        let installable: Vec<Release> = match app_asset_patterns() {
+            Some((must, must_not)) => releases
+                .into_iter()
+                .filter(|r| r.find_asset(&must, &must_not).is_some())
+                .collect(),
+            None => releases,
+        };
+        latest_release(&installable, Channel::Stable)
             .map(|r| r.version.clone())
             .ok_or_else(|| "no release found".to_string())
     }

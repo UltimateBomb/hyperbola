@@ -1780,7 +1780,7 @@ dependencies = [
 
 [[package]]
 name = "hyperbola"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "dirs 5.0.1",
  "futures-util",
@@ -1804,7 +1804,7 @@ dependencies = [
 
 [[package]]
 name = "hyperbola-cli"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "hyperbola-core",
  "hyperbola-runner",
@@ -1813,7 +1813,7 @@ dependencies = [
 
 [[package]]
 name = "hyperbola-core"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -1822,7 +1822,7 @@ dependencies = [
 
 [[package]]
 name = "hyperbola-runner"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "hyperbola-core",
  "tokio",
@@ -4200,7 +4200,7 @@ dependencies = [
 
 [[package]]
 name = "tauri-plugin-ytdlp"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "serde",
  "serde_json",
