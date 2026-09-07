@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.1.5 — 2026-09-07
+
+- **A cookie export works whatever shape it is in.** Extensions export
+  either the Netscape table or JSON, and the engine reads only the first.
+  Pointing the app at a perfectly good JSON export failed with the same
+  "sign in" message as no cookies at all. The app now converts what you give
+  it, keeps its own copy, and says plainly when a file is not cookies.
+- **The advice for that wall told you to do something impossible.** It said
+  to pick the browser you are signed into — but Windows encrypts the cookie
+  database so only the browser can read it, and no Android app can read
+  another's cookies. It now names the real cause: the address you come out
+  of. Switching VPN server usually clears it; a cookies file always does.
+
 ## 0.1.4 — 2026-09-07
 
 - **A cookies file can be chosen in Settings.** When a site answers "sign in
