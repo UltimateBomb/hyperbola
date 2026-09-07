@@ -10,3 +10,6 @@ repository.workspace = true
 [dependencies]
 hyperbola-core = { path = "../core" }
 tokio = { version = "1", features = ["process", "io-util", "macros", "rt", "sync", "time"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt"] }

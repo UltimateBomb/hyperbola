@@ -13,7 +13,7 @@ use hyperbola_core::args::{build_download_args, build_probe_args, RunnerEnv};
 use hyperbola_core::domain::{CookieSource, DownloadOptions, MediaProbe};
 use hyperbola_core::probe::parse_probe;
 use hyperbola_core::progress::{parse_line, Event};
-use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncRead, BufReader};
 use tokio::process::Command;
 use tokio::sync::oneshot;
 
@@ -22,6 +22,38 @@ pub use hyperbola_core::retry::is_retryable;
 /// Windows only: keep child processes from flashing a console window.
 #[cfg(windows)]
 pub const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+
+/// Reads a child's output line by line, whatever encoding it is in.
+///
+/// Windows writes its error messages in the system's own code page, which is
+/// not UTF-8. A reader that insists on UTF-8 stops at the first such byte —
+/// and the failure that followed was lost, leaving "exited with code 1" as
+/// the only thing to show the user. Bytes in, lossy text out: a mangled
+/// character is worth incomparably more than a missing message.
+struct Lines<R> {
+    reader: BufReader<R>,
+    buffer: Vec<u8>,
+}
+
+impl<R: AsyncRead + Unpin> Lines<R> {
+    fn new(reader: R) -> Self {
+        Lines { reader: BufReader::new(reader), buffer: Vec::new() }
+    }
+
+    async fn next(&mut self) -> Option<String> {
+        self.buffer.clear();
+        match self.reader.read_until(b'\n', &mut self.buffer).await {
+            Ok(0) | Err(_) => None,
+            Ok(_) => {
+                while matches!(self.buffer.last(), Some(b'\n') | Some(b'\r')) {
+                    self.buffer.pop();
+                }
+                Some(String::from_utf8_lossy(&self.buffer).into_owned())
+            }
+        }
+    }
+}
 
 /// How a download ended.
 #[derive(Debug, Clone, PartialEq)]
@@ -110,8 +142,8 @@ impl Runner {
 
         let stdout = child.stdout.take().expect("stdout piped");
         let stderr = child.stderr.take().expect("stderr piped");
-        let mut stdout_lines = BufReader::new(stdout).lines();
-        let mut stderr_lines = BufReader::new(stderr).lines();
+        let mut stdout_lines = Lines::new(stdout);
+        let mut stderr_lines = Lines::new(stderr);
 
         let mut destination = None;
         let mut error = None;
@@ -125,19 +157,19 @@ impl Runner {
                     let _ = child.kill().await;
                     return Ok(Outcome { success: false, destination, error, canceled: true });
                 }
-                line = stdout_lines.next_line() => {
+                line = stdout_lines.next() => {
                     match line {
-                        Ok(Some(line)) => {
+                        Some(line) => {
                             if let Some(event) = parse_line(&line) {
                                 record(&event, &mut destination, &mut error);
                                 on_event(event);
                             }
                         }
-                        _ => break,
+                        None => break,
                     }
                 }
-                line = stderr_lines.next_line() => {
-                    if let Ok(Some(line)) = line {
+                line = stderr_lines.next() => {
+                    if let Some(line) = line {
                         if let Some(event) = parse_line(&line) {
                             record(&event, &mut destination, &mut error);
                             on_event(event);
@@ -148,7 +180,7 @@ impl Runner {
         }
 
         // Drain whatever is left on stderr so the reported failure is the real one.
-        while let Ok(Some(line)) = stderr_lines.next_line().await {
+        while let Some(line) = stderr_lines.next().await {
             if let Some(event) = parse_line(&line) {
                 record(&event, &mut destination, &mut error);
                 on_event(event);
@@ -247,6 +279,25 @@ mod tests {
             describe_failure(None, None, ""),
             "the download engine stopped without saying why"
         );
+    }
+
+    #[tokio::test]
+    async fn output_in_another_encoding_is_still_read() {
+        // "ERROR: сброшено" with the Russian part in Windows-1251, which is
+        // not valid UTF-8 — exactly what a Windows console produces.
+        let mut raw: Vec<u8> = b"ERROR: ".to_vec();
+        raw.extend_from_slice(&[0xF1, 0xE1, 0xF0, 0xEE, 0xF8, 0xE5, 0xED, 0xEE]);
+        raw.push(b'\n');
+        raw.extend_from_slice(b"[download] Destination: /tmp/clip.mp4\n");
+
+        let mut lines = Lines::new(&raw[..]);
+        let first = lines.next().await.expect("the first line must survive");
+        assert!(first.starts_with("ERROR: "), "lost the message: {first:?}");
+        // The line after the bad bytes must still arrive — that is the whole
+        // point: one mangled character used to swallow everything after it.
+        let second = lines.next().await.expect("reading must not stop");
+        assert_eq!(second, "[download] Destination: /tmp/clip.mp4");
+        assert!(lines.next().await.is_none());
     }
 
     #[test]

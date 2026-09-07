@@ -85,25 +85,40 @@ jobs:
       # code and symbols — several times the engine it carries.
       - run: npx tauri android build --apk --split-per-abi
       # A release APK is unsigned, and an unsigned APK cannot be installed.
-      # This key is generated per run and is not a release identity: it makes
-      # the build installable, nothing more. A stored key replaces it when
-      # there is one, and then updates will install over each other.
+      #
+      # The repository's own key signs it, so every build installs over the
+      # last one and keeps the queue and settings. Without that secret — a
+      # fork, say — a throwaway key is generated so the build still produces
+      # something installable, but those APKs will not update each other.
       - name: sign
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
         run: |
           set -eu
-          keytool -genkeypair -v -keystore build.jks -alias hyperbola \
-            -keyalg RSA -keysize 2048 -validity 10000 \
-            -storepass hyperbola -keypass hyperbola -dname "CN=Hyperbola build"
+          if [ -n "${KEYSTORE_BASE64:-}" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > build.p12
+            keystore=build.p12
+            password="$KEYSTORE_PASSWORD"
+            echo "signing with the repository key"
+          else
+            keytool -genkeypair -v -keystore build.p12 -storetype PKCS12 -alias hyperbola \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -storepass throwaway -keypass throwaway -dname "CN=Hyperbola build"
+            keystore=build.p12
+            password=throwaway
+            echo "no repository key: signing with a throwaway one"
+          fi
           tools="$ANDROID_HOME/build-tools/35.0.0"
           mkdir -p dist
           for apk in $(find src-tauri/gen/android -name "*-unsigned.apk"); do
             aligned="dist/$(basename "${apk%-unsigned.apk}").apk"
             "$tools/zipalign" -p -f 4 "$apk" "$aligned"
-            "$tools/apksigner" sign --ks build.jks --ks-pass pass:hyperbola \
-              --key-pass pass:hyperbola "$aligned"
-            "$tools/apksigner" verify "$aligned"
+            "$tools/apksigner" sign --ks "$keystore" --ks-pass "pass:$password" \
+              --ks-key-alias hyperbola --key-pass "pass:$password" "$aligned"
+            "$tools/apksigner" verify --print-certs "$aligned" | head -3
           done
-          rm -f build.jks dist/*.idsig
+          rm -f build.p12 dist/*.idsig
           ls -la dist
       - name: collect apk
         run: |
