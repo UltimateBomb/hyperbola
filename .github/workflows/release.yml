@@ -48,7 +48,9 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: dist/*.exe
-          draft: true
+          # Not a draft: the app reads this repository's releases to decide
+          # whether it is out of date, and a draft is invisible there.
+          draft: false
 
   android:
     name: android apk
@@ -136,4 +138,4 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: dist/*.apk
-          draft: true
+          draft: false
