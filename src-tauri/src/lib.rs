@@ -872,6 +872,35 @@ fn app_platform() -> &'static str {
 
 /// Android's folder picker. The system remembers the grant, so this is asked
 /// once and the answer survives restarts.
+/// Takes the file the user picked and keeps a copy the engine can read.
+///
+/// Cookie exporters produce JSON as often as they produce the Netscape table
+/// yt-dlp wants, and yt-dlp refuses JSON outright — so pointing the app at a
+/// perfectly good export failed with the same login wall as no cookies at
+/// all, with nothing to say the file was the problem. The app now converts
+/// what it is given, and refuses plainly when the file is not cookies.
+///
+/// Keeping a copy also means the setting still works after the download the
+/// user picked from is cleaned up.
+#[tauri::command]
+async fn adopt_cookies_file(app: AppHandle, path: String) -> Result<String, String> {
+    let source = PathBuf::from(&path);
+    let text =
+        std::fs::read_to_string(&source).map_err(|e| format!("could not read that file: {e}"))?;
+    let converted = hyperbola_core::cookies::to_netscape(&text)
+        .ok_or("that file does not look like exported cookies")?;
+    let target = {
+        let state = app.state::<AppState>();
+        state
+            .queue_path
+            .parent()
+            .unwrap_or(&state.staging_dir)
+            .join("cookies.txt")
+    };
+    std::fs::write(&target, converted).map_err(|e| format!("could not save it: {e}"))?;
+    Ok(target.display().to_string())
+}
+
 /// Takes a cookies file from the user on Android, where the desktop file
 /// dialog does not exist and no browser cookie database can be read.
 #[tauri::command]
@@ -1071,6 +1100,7 @@ pub fn run() {
             app_platform,
             pick_output_folder,
             pick_cookies_file,
+            adopt_cookies_file,
             open_download,
             share_download,
             failure_advice,

@@ -10,6 +10,7 @@
   const browsers = ["", "brave", "chrome", "chromium", "edge", "firefox", "opera", "safari", "vivaldi"];
   let cookieBrowser = $state(draft.cookies.source === "browser" ? draft.cookies.value : "");
   let cookieFile = $state(draft.cookies.source === "file" ? String(draft.cookies.value) : "");
+  let cookieError: string | null = $state(null);
   let subtitleText = $state(draft.subtitle_languages.join(", "));
   let extraArgsText = $state((draft.extra_args ?? []).join(" "));
 
@@ -38,7 +39,15 @@
             multiple: false,
             filters: [{ name: "Cookies", extensions: ["txt"] }],
           });
-    if (typeof chosen === "string" && chosen) cookieFile = chosen;
+    if (typeof chosen !== "string" || !chosen) return;
+    // Take a copy in the form the engine reads, and say so when the file
+    // turns out not to be cookies at all.
+    cookieError = null;
+    try {
+      cookieFile = await api.adoptCookiesFile(chosen);
+    } catch (e) {
+      cookieError = String(e);
+    }
   }
 
   async function save() {
@@ -121,6 +130,7 @@
           <button class="ghost" onclick={() => (cookieFile = "")}>Clear</button>
         {/if}
       </div>
+      {#if cookieError}<p class="pill err">{cookieError}</p>{/if}
       <p class="muted small">
         {#if cookieFile}
           {cookieFile}

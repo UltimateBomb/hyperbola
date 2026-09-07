@@ -10,8 +10,10 @@
 pub fn advice_for(message: &str) -> Option<&'static str> {
     let text = message.to_ascii_lowercase();
 
-    if text.contains("sign in to confirm") || text.contains("confirm you're not a bot") {
-        return Some("The site wants a signed-in account. In Settings, choose the browser you are signed into and try again.");
+    // Note the typographic apostrophe: the real message uses one, so a check
+    // for "you're" would never fire.
+    if text.contains("sign in to confirm") || text.contains("not a bot") {
+        return Some("The site is refusing the address you come from — a VPN exit it has seen too much traffic from. Switching VPN server usually clears it. Otherwise put a cookies file in Settings: export cookies from a browser you are signed into.");
     }
     if text.contains("403") || text.contains("unable to download video data") {
         return Some("The site refused the download. Updating yt-dlp in Updates usually fixes this — sites change what they accept.");
@@ -23,7 +25,7 @@ pub fn advice_for(message: &str) -> Option<&'static str> {
         return Some("This video is gone from the site. Nothing to download.");
     }
     if text.contains("private video") || text.contains("members-only") {
-        return Some("This video is private or for members. It needs an account that can see it — set your browser in Settings.");
+        return Some("This video is private or for members. It needs an account that can see it — put a cookies file in Settings.");
     }
     if text.contains("is not available in your country") {
         return Some(
@@ -61,8 +63,9 @@ mod tests {
 
     #[test]
     fn a_login_wall_points_at_cookies() {
-        let advice = advice_for("ERROR: Sign in to confirm you're not a bot").unwrap();
-        assert!(advice.contains("signed-in account"));
+        let advice = advice_for("ERROR: Sign in to confirm you\u{2019}re not a bot").unwrap();
+        assert!(advice.contains("cookies file"));
+        assert!(advice.contains("VPN"));
     }
 
     #[test]

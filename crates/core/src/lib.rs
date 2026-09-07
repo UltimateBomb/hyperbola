@@ -10,6 +10,7 @@
 
 pub mod advice;
 pub mod args;
+pub mod cookies;
 pub mod domain;
 pub mod probe;
 pub mod progress;

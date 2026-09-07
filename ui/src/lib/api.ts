@@ -171,6 +171,7 @@ export const api = {
   platform: () => invoke<string>("app_platform"),
   pickOutputFolder: () => invoke<string | null>("pick_output_folder"),
   pickCookiesFile: () => invoke<string | null>("pick_cookies_file"),
+  adoptCookiesFile: (path: string) => invoke<string>("adopt_cookies_file", { path }),
   openDownload: (id: number) => invoke<void>("open_download", { id }),
   shareDownload: (id: number) => invoke<void>("share_download", { id }),
   failureAdvice: (message: string) => invoke<string | null>("failure_advice", { message }),
