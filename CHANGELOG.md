@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.1.3 — 2026-09-07
+
+- **Playlists download the videos you picked.** Choosing forty videos
+  queued the playlist forty times: every row re-read the whole list and
+  went for its first video. That is why the queue sat on "Reading media
+  info" for minutes, and why YouTube then answered "Sign in to confirm
+  you're not a bot" — hundreds of identical requests from one address in a
+  minute look exactly like a bot. It was never about your account.
+- **A sign-in wall is reported, not retried.** Asking three more times is
+  what escalated it, and it buried the one sentence that explained what
+  happened.
+- **Downloads run at the speed of your connection.** The app sent a
+  progress event for every chunk that arrived, and on a phone that bridge —
+  not the network — set the pace: 50 KB/s where the same file over the same
+  Wi-Fi came down at 2 MB/s.
+- A release is no longer offered before its file for your platform exists.
+- The update check can no longer hang forever on a network that swallows
+  packets, and old installers stop piling up in the cache.
+
 ## 0.1.2 — 2026-09-07
 
 - **The update notice appears on its own.** The app asked once, at startup,
