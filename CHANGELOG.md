@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.1.4 — 2026-09-07
+
+- **A cookies file can be chosen in Settings.** When a site answers "sign in
+  to confirm you're not a bot", this is the answer it is asking for. On
+  Android it is the only one possible — no app can read a browser's cookies
+  there — and on Windows it is more reliable than reading the browser, which
+  recent Chrome and Brave versions encrypt in a way that fails without
+  saying so.
+- **Extra yt-dlp arguments**, applied to reading a link as well as
+  downloading it, for when one site needs one flag.
+- "Clear finished" now also clears failures. A batch that went wrong left as
+  many dead rows as it had videos.
+- A check that could not reach the network is retried in a minute instead of
+  an hour.
+
 ## 0.1.3 — 2026-09-07
 
 - **Playlists download the videos you picked.** Choosing forty videos
