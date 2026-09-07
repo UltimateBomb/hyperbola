@@ -95,6 +95,7 @@ class PublishArgs {
 @TauriPlugin
 class YtdlpPlugin(private val activity: Activity) : Plugin(activity) {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private val localShare by lazy { LocalShare(activity) }
 
     /** Output lines per process, drained by the Rust side as it polls. */
     private val output = ConcurrentHashMap<String, ConcurrentLinkedQueue<String>>()
@@ -372,6 +373,33 @@ class YtdlpPlugin(private val activity: Activity) : Plugin(activity) {
         } catch (e: Exception) {
             invoke.reject(describe(e, "could not start the installer"))
         }
+    }
+
+    /**
+     * Serves one finished file to the local network and returns the address.
+     *
+     * For a car head unit this beats Bluetooth by two orders of magnitude:
+     * the unit runs Android with a browser and is usually already on the
+     * phone's hotspot, so a link moves a film in half a minute instead of
+     * three quarters of an hour.
+     */
+    @Command
+    fun startWifiShare(invoke: Invoke) {
+        val args = invoke.parseArgs(FileArgs::class.java)
+        try {
+            val url = localShare.start(Uri.parse(args.uri))
+            val result = JSObject()
+            result.put("url", url)
+            invoke.resolve(result)
+        } catch (e: Exception) {
+            invoke.reject(describe(e, "could not start sharing over Wi-Fi"))
+        }
+    }
+
+    @Command
+    fun stopWifiShare(invoke: Invoke) {
+        localShare.stop()
+        invoke.resolve(JSObject())
     }
 
     @Command

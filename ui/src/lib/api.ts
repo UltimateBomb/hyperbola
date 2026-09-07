@@ -170,6 +170,8 @@ export const api = {
   openDownload: (id: number) => invoke<void>("open_download", { id }),
   shareDownload: (id: number) => invoke<void>("share_download", { id }),
   failureAdvice: (message: string) => invoke<string | null>("failure_advice", { message }),
+  startWifiShare: (id: number) => invoke<string>("start_wifi_share", { id }),
+  stopWifiShare: () => invoke<void>("stop_wifi_share"),
 };
 
 export function humanBytes(bytes: number | null | undefined): string {

@@ -108,6 +108,25 @@ impl<R: Runtime> Ytdlp<R> {
             .map_err(Into::into)
     }
 
+    /// Serves one file to the local network; returns the address to type.
+    pub fn start_wifi_share(&self, uri: &str) -> Result<ShareAddress> {
+        self.0
+            .run_mobile_plugin(
+                "startWifiShare",
+                FileRequest {
+                    uri: uri.to_string(),
+                },
+            )
+            .map_err(Into::into)
+    }
+
+    pub fn stop_wifi_share(&self) -> Result<()> {
+        self.0
+            .run_mobile_plugin::<serde_json::Value>("stopWifiShare", ())
+            .map(|_| ())
+            .map_err(Into::into)
+    }
+
     pub fn cancel(&self, id: &str) -> Result<()> {
         self.0
             .run_mobile_plugin::<serde_json::Value>("cancel", ProcessId { id: id.to_string() })

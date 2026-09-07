@@ -721,6 +721,57 @@ fn failure_advice(message: String) -> Option<&'static str> {
     hyperbola_core::advice::advice_for(&message)
 }
 
+/// Serves a finished download to the local network — a car head unit, a
+/// laptop, anything with a browser on the same Wi-Fi.
+#[tauri::command]
+async fn start_wifi_share(app: AppHandle, id: DownloadId) -> Result<String, String> {
+    let uri = {
+        let state = app.state::<AppState>();
+        let queue = state.queue.lock().unwrap();
+        queue
+            .get(id)
+            .and_then(|d| d.metadata.get("uri").cloned())
+            .ok_or("that file cannot be shared")?
+    };
+
+    #[cfg(target_os = "android")]
+    {
+        use tauri_plugin_ytdlp::YtdlpExt;
+        let handle = app.clone();
+        let address =
+            tauri::async_runtime::spawn_blocking(move || handle.ytdlp().start_wifi_share(&uri))
+                .await
+                .map_err(|e| e.to_string())?
+                .map_err(|e| e.to_string())?;
+        return Ok(address.url);
+    }
+
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = (uri, &app);
+        Err("this is a phone feature".to_string())
+    }
+}
+
+#[tauri::command]
+async fn stop_wifi_share(app: AppHandle) -> Result<(), String> {
+    #[cfg(target_os = "android")]
+    {
+        use tauri_plugin_ytdlp::YtdlpExt;
+        let handle = app.clone();
+        return tauri::async_runtime::spawn_blocking(move || handle.ytdlp().stop_wifi_share())
+            .await
+            .map_err(|e| e.to_string())?
+            .map_err(|e| e.to_string());
+    }
+
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = &app;
+        Ok(())
+    }
+}
+
 #[tauri::command]
 fn app_version() -> &'static str {
     env!("CARGO_PKG_VERSION")
@@ -932,6 +983,8 @@ pub fn run() {
             open_download,
             share_download,
             failure_advice,
+            start_wifi_share,
+            stop_wifi_share,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Hyperbola");

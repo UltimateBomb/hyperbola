@@ -5,6 +5,7 @@
   let { snapshot, platform = "" }: { snapshot: Snapshot; platform?: string } = $props();
 
   let problems: Record<number, string> = $state({});
+  let wifi: { id: number; url: string } | null = $state(null);
   let advice: Record<number, string> = $state({});
 
   // A failure the user can do nothing with is half a failure. The engine's
@@ -35,6 +36,22 @@
   async function share(id: number) {
     try {
       await api.shareDownload(id);
+    } catch (e) {
+      problems = { ...problems, [id]: String(e) };
+    }
+  }
+
+  // Bluetooth moves about 200 KB/s — a song in half a minute, a film in
+  // three quarters of an hour. A car head unit runs a browser and is
+  // already on the phone's hotspot, so a link is the fast way in.
+  async function overWifi(id: number) {
+    try {
+      if (wifi?.id === id) {
+        await api.stopWifiShare();
+        wifi = null;
+        return;
+      }
+      wifi = { id, url: await api.startWifiShare(id) };
     } catch (e) {
       problems = { ...problems, [id]: String(e) };
     }
@@ -90,6 +107,14 @@
         <div class="advice">{advice[item.id]}</div>
       {/if}
 
+      {#if wifi?.id === item.id}
+        <div class="wifi">
+          <div>Open this on the other device — its browser, on the same Wi-Fi:</div>
+          <div class="mono address">{wifi.url}</div>
+          <div class="muted small">Tap the button again to stop sharing.</div>
+        </div>
+      {/if}
+
       {#if problems[item.id]}
         <div class="problem">{problems[item.id]}</div>
       {/if}
@@ -109,7 +134,8 @@
           {#if item.state.state === "completed"}
             <button class="icon ghost" onclick={() => open(item.id)} title="Play">▶</button>
             {#if platform === "android"}
-              <button class="icon ghost" onclick={() => share(item.id)} title="Send to another device">⤴</button>
+              <button class="icon ghost" onclick={() => share(item.id)} title="Send over Bluetooth or a messenger">⤴</button>
+              <button class="icon ghost" class:on={wifi?.id === item.id} onclick={() => overWifi(item.id)} title="Send over Wi-Fi — for a car head unit">📶</button>
             {:else}
               <button class="icon ghost" onclick={() => revealItemInDir(item.state.path)} title="Show in folder">📁</button>
             {/if}
@@ -163,4 +189,14 @@
   .empty { text-align: center; padding: 28px 0; }
   .problem { color: var(--err); font-size: 12px; margin-bottom: 6px; }
   .advice { color: var(--warn); font-size: 12px; margin: 4px 0 2px; }
+  .wifi {
+    background: var(--bg-soft);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 10px 12px;
+    margin: 6px 0;
+    font-size: 13px;
+  }
+  .address { color: var(--accent); font-size: 15px; margin: 6px 0; word-break: break-all; }
+  button.on { background: #24325e; border-color: var(--accent); }
 </style>

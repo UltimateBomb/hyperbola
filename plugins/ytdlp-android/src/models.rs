@@ -124,3 +124,10 @@ pub struct FileRequest {
 pub struct InstallRequest {
     pub path: String,
 }
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ShareAddress {
+    /// What to type on the other device.
+    pub url: String,
+}
