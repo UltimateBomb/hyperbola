@@ -103,6 +103,10 @@
       <input type="checkbox" bind:checked={draft.prefer_compatible} />
       Prefer formats that play everywhere (H.264/AAC)
     </label>
+    <label class="row">
+      <input type="checkbox" bind:checked={draft.auto_install_app_updates} />
+      Install new versions of Hyperbola automatically
+    </label>
     <label class="row"><input type="checkbox" bind:checked={draft.embed_metadata} /> Embed metadata</label>
     <label class="row"><input type="checkbox" bind:checked={draft.embed_thumbnail} /> Embed thumbnail</label>
     <label class="row"><input type="checkbox" bind:checked={draft.embed_chapters} /> Embed chapters</label>

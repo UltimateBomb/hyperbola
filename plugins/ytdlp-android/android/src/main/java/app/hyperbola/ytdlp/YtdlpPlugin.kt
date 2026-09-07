@@ -6,6 +6,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
+import android.provider.Settings
 import android.system.Os
 import android.content.ContentValues
 import android.webkit.WebView
@@ -13,6 +14,7 @@ import androidx.activity.result.ActivityResult
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import android.content.pm.PackageManager
+import androidx.core.content.FileProvider
 import androidx.documentfile.provider.DocumentFile
 import app.tauri.annotation.Command
 import app.tauri.annotation.InvokeArg
@@ -57,6 +59,12 @@ class ProcessArgs {
 @InvokeArg
 class UpdateArgs {
     var channel: String = "stable"
+}
+
+@InvokeArg
+class InstallArgs {
+    /** Path to a downloaded .apk inside the app's own directory. */
+    lateinit var path: String
 }
 
 @InvokeArg
@@ -320,6 +328,51 @@ class YtdlpPlugin(private val activity: Activity) : Plugin(activity) {
         activity.contentResolver.query(uri, arrayOf(MediaStore.Downloads.DISPLAY_NAME), null, null, null)
             ?.use { if (it.moveToFirst()) it.getString(0) else null }
     }.getOrNull()
+
+    /**
+     * Hands a downloaded update to the system installer.
+     *
+     * Android does not let an app replace itself: the package installer does
+     * that, after asking the user, and only for an app allowed to request
+     * installs. When that permission is missing the user is taken to the one
+     * screen where it can be given, because a silent refusal here looks like
+     * a broken update button.
+     */
+    @Command
+    fun installApk(invoke: Invoke) {
+        val args = invoke.parseArgs(InstallArgs::class.java)
+        val file = File(args.path)
+        if (!file.isFile) {
+            invoke.reject("the downloaded update is gone: ${args.path}")
+            return
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+            !activity.packageManager.canRequestPackageInstalls()
+        ) {
+            val intent = Intent(
+                Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                Uri.parse("package:${activity.packageName}"),
+            ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            runCatching { activity.startActivity(intent) }
+            invoke.reject("allow Hyperbola to install apps, then press update again")
+            return
+        }
+        val uri = FileProvider.getUriForFile(
+            activity,
+            "${activity.packageName}.hyperbola.fileprovider",
+            file,
+        )
+        val intent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, "application/vnd.android.package-archive")
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        try {
+            activity.startActivity(intent)
+            invoke.resolve(JSObject())
+        } catch (e: Exception) {
+            invoke.reject(describe(e, "could not start the installer"))
+        }
+    }
 
     @Command
     fun cancel(invoke: Invoke) {

@@ -118,3 +118,9 @@ pub struct ServiceRequest {
 pub struct FileRequest {
     pub uri: String,
 }
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InstallRequest {
+    pub path: String,
+}

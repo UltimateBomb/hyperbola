@@ -95,6 +95,19 @@ impl<R: Runtime> Ytdlp<R> {
             .map_err(Into::into)
     }
 
+    /// Hands a downloaded update to the system installer.
+    pub fn install_apk(&self, path: &str) -> Result<()> {
+        self.0
+            .run_mobile_plugin::<serde_json::Value>(
+                "installApk",
+                InstallRequest {
+                    path: path.to_string(),
+                },
+            )
+            .map(|_| ())
+            .map_err(Into::into)
+    }
+
     pub fn cancel(&self, id: &str) -> Result<()> {
         self.0
             .run_mobile_plugin::<serde_json::Value>("cancel", ProcessId { id: id.to_string() })

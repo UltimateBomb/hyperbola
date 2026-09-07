@@ -433,11 +433,22 @@ fn ytdlp_asset_patterns() -> (Vec<&'static str>, Vec<&'static str>) {
 }
 
 /// How Hyperbola's own release assets are named per platform.
+///
+/// A release carries one APK per architecture, so "any .apk" would install
+/// the wrong one on most phones.
 fn app_asset_patterns() -> Option<(Vec<&'static str>, Vec<&'static str>)> {
     if cfg!(target_os = "windows") {
         Some((vec!["setup.exe"], vec![]))
     } else if cfg!(target_os = "android") {
-        Some((vec![".apk"], vec![]))
+        if cfg!(target_arch = "aarch64") {
+            Some((vec!["arm64", ".apk"], vec![]))
+        } else if cfg!(target_arch = "arm") {
+            Some((vec!["app-arm-", ".apk"], vec![]))
+        } else if cfg!(target_arch = "x86_64") {
+            Some((vec!["x86_64", ".apk"], vec![]))
+        } else {
+            Some((vec!["app-x86-", ".apk"], vec![]))
+        }
     } else {
         None
     }

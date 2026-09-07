@@ -3,6 +3,18 @@
     <!-- Permissions live in the app manifest; the library declares only the
          service that keeps downloads running while the phone sleeps. -->
     <application>
+        <!-- The package installer is another app: it cannot read a file by
+             path, only through a handle granted to it. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.hyperbola.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/hyperbola_file_paths" />
+        </provider>
+
         <service
             android:name="app.hyperbola.ytdlp.DownloadService"
             android:exported="false"

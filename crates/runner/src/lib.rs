@@ -23,7 +23,6 @@ pub use hyperbola_core::retry::is_retryable;
 #[cfg(windows)]
 pub const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
-
 /// Reads a child's output line by line, whatever encoding it is in.
 ///
 /// Windows writes its error messages in the system's own code page, which is
@@ -38,7 +37,10 @@ struct Lines<R> {
 
 impl<R: AsyncRead + Unpin> Lines<R> {
     fn new(reader: R) -> Self {
-        Lines { reader: BufReader::new(reader), buffer: Vec::new() }
+        Lines {
+            reader: BufReader::new(reader),
+            buffer: Vec::new(),
+        }
     }
 
     async fn next(&mut self) -> Option<String> {

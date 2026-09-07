@@ -129,7 +129,7 @@
         {#if status.component === "app"}
           {#if status.state.state === "update_available"}
             <button onclick={() => install("app")} disabled={busy !== null}>
-              {busy === "app" ? "Downloading…" : "Update and restart"}
+              {busy === "app" ? "Downloading…" : "Update"}
             </button>
           {/if}
         {:else if status.state.state === "update_available" || status.state.state === "missing"}

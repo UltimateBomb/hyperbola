@@ -113,6 +113,7 @@ export interface Settings {
   auto_install_dependency_updates: boolean;
   watch_clipboard: boolean;
   prefer_compatible: boolean;
+  auto_install_app_updates: boolean;
 }
 
 export type UpdateState =

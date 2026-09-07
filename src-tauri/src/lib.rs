@@ -635,6 +635,18 @@ async fn install_app_update(
             handle.exit(0);
         });
     }
+
+    #[cfg(target_os = "android")]
+    {
+        use tauri_plugin_ytdlp::YtdlpExt;
+        let path = installer.display().to_string();
+        let handle = app.clone();
+        tauri::async_runtime::spawn_blocking(move || handle.ytdlp().install_apk(&path))
+            .await
+            .map_err(|e| e.to_string())?
+            .map_err(|e| e.to_string())?;
+    }
+
     Ok(installer.display().to_string())
 }
 
@@ -856,8 +868,24 @@ pub fn run() {
                 if !auto_install {
                     return;
                 }
+                let auto_app = {
+                    let state = startup.state::<AppState>();
+                    let settings = state.settings.lock().unwrap();
+                    settings.auto_install_app_updates
+                };
                 for status in report.actionable() {
                     if status.component == Component::App {
+                        // The system asks before replacing anything, so this
+                        // fetches the new version and opens that question —
+                        // it does not install behind the user's back.
+                        if auto_app && cfg!(target_os = "android") {
+                            log::info!("fetching the new version of the app");
+                            if let Err(message) =
+                                install_update(startup.clone(), Component::App).await
+                            {
+                                log::error!("could not fetch the update: {message}");
+                            }
+                        }
                         continue;
                     }
                     let component = status.component;
